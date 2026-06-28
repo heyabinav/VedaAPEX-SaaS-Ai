@@ -14,18 +14,14 @@ __pycache__
 vedaapex.db
 *.db
 
-# Logs & uploads
+# Logs
 logs
-app/logs
-app/uploads
-static
 
 # Git
 .git
 .github
 
-# Full backend directories (not needed for Search Aggregation)
-app/
+# Other backend directories (not needed)
 deploy/
 docs/
 tests/
@@ -35,7 +31,7 @@ vedaapex-search-aggregation/
 vedaapex-space-image/
 vedaapex-video-search/
 
-# Documentation (not needed in Docker image)
+# Documentation
 *.md
 !README.md
 
