@@ -1,4 +1,5 @@
 # Core Framework
+psycopg2-binary==2.9.9
 fastapi==0.110.1
 uvicorn[standard]==0.28.0
 starlette==0.37.2
