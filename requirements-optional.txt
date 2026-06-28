@@ -1,0 +1,6 @@
+# Optional image enhancement dependencies
+# These are only needed if you want Real-ESRGAN/BasicSR image enhancement support.
+# The base application can run without these packages.
+
+basicsr>=1.4.2
+realesrgan>=0.3.0

@@ -1,0 +1,489 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AuthProvider {
+  OTP
+  GOOGLE
+  FIREBASE
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum PaperStatus {
+  DRAFT
+  PROCESSING
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum MediaAssetType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaJobType {
+  IMAGE_BACKGROUND_REMOVAL
+  VIDEO_BACKGROUND_REMOVAL
+  IMAGE_WATERMARK_REMOVAL
+  VIDEO_WATERMARK_REMOVAL
+  IMAGE_ENHANCEMENT
+  VIDEO_ENHANCEMENT
+}
+
+enum MediaJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum StudyPlanStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum MockTestStatus {
+  DRAFT
+  GENERATED
+  SUBMITTED
+  EVALUATED
+}
+
+enum SubmissionType {
+  TEXT
+  PDF
+  IMAGE
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum UsageMetricType {
+  PAPER_ANALYSIS
+  ANSWER_EVALUATION
+  CHAT
+  OCR
+  RECOMMENDATION
+  MOCK_TEST
+  STORAGE
+  STUDY_PACK
+  MEDIA_BACKGROUND_REMOVAL
+  MEDIA_WATERMARK_REMOVAL
+  MEDIA_ENHANCEMENT
+  PAYMENT
+}
+
+enum PaymentOrderStatus {
+  CREATED
+  PAID
+  FAILED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  CREATED
+  VERIFIED
+  FAILED
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  firebaseUid        String?            @unique
+  email              String?            @unique
+  phone              String?            @unique
+  name               String
+  avatarUrl          String?
+  role               UserRole           @default(USER)
+  provider           AuthProvider       @default(OTP)
+  emailVerified      Boolean            @default(false)
+  phoneVerified      Boolean            @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  sessions           Session[]
+  bookmarks          Bookmark[]
+  downloads          Download[]
+  progressRecords    UserProgress[]
+  studyPlans         StudyPlan[]
+  mockTests          MockTest[]
+  notifications      Notification[]
+  answerEvaluations  AnswerEvaluation[]
+  activityLogs       ActivityLog[]
+  aiUsageEvents      AIUsageEvent[]
+  leaderboardEntries LeaderboardEntry[]
+  uploadedPapers     Paper[]            @relation("PaperUploader")
+  mediaAssets        MediaAsset[]
+  mediaJobs          MediaJob[]
+  paymentOrders      PaymentOrder[]
+  payments           PaymentTransaction[]
+}
+
+model Session {
+  id               String        @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  status           SessionStatus @default(ACTIVE)
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+}
+
+model Paper {
+  id             String             @id @default(cuid())
+  slug           String             @unique
+  title          String
+  classLevel     Int
+  subject        String
+  board          String
+  year           Int
+  language       String?            @default("en")
+  tags           String[]
+  pdfUrl         String
+  thumbnailUrl   String?
+  storageKey     String?
+  pageCount      Int?
+  status         PaperStatus        @default(DRAFT)
+  isFeatured     Boolean            @default(false)
+  downloadsCount Int                @default(0)
+  viewsCount     Int                @default(0)
+  aiSummary      String?
+  uploadedById   String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  uploadedBy     User?              @relation("PaperUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  analysis       AIAnalysis?
+  bookmarks      Bookmark[]
+  downloads      Download[]
+  answers        AnswerEvaluation[]
+  aiUsageEvents  AIUsageEvent[]
+
+  @@index([classLevel, subject, board, year])
+  @@index([status, isFeatured, downloadsCount])
+}
+
+model AIAnalysis {
+  id                  String         @id @default(cuid())
+  paperId             String         @unique
+  status              AnalysisStatus @default(PENDING)
+  provider            String?
+  modelName           String?
+  repeatedQuestions   Json?
+  importantChapters   Json?
+  topicWeightage      Json?
+  predictedQuestions  Json?
+  difficultyLevel     String?
+  revisionStrategy    Json?
+  extractedQuestions  Json?
+  questionAnswerBank  Json?
+  rapidRevisionNotes  Json?
+  studyStrategy       Json?
+  ocrText             String?
+  summary             String?
+  errorMessage        String?
+  generatedAt         DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  paper               Paper          @relation(fields: [paperId], references: [id], onDelete: Cascade)
+}
+
+model MediaAsset {
+  id                 String         @id @default(cuid())
+  userId             String
+  type               MediaAssetType
+  title              String?
+  originalUrl        String
+  processedUrl       String?
+  storageKey         String         @unique
+  processedStorageKey String?
+  mimeType           String
+  sizeBytes          Int
+  metadata           Json?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs               MediaJob[]
+
+  @@index([userId, type, createdAt])
+}
+
+model MediaJob {
+  id               String         @id @default(cuid())
+  userId           String
+  assetId          String
+  type             MediaJobType
+  status           MediaJobStatus @default(QUEUED)
+  provider         String?
+  providerJobId    String?
+  progress         Int            @default(0)
+  errorMessage     String?
+  outputUrl        String?
+  outputStorageKey String?
+  options          Json?
+  completedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset            MediaAsset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([assetId, type])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  paperId   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paper     Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, paperId])
+}
+
+model Download {
+  id           String   @id @default(cuid())
+  userId       String?
+  paperId      String
+  source       String?
+  ipAddress    String?
+  downloadedAt DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  paper        Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId, downloadedAt])
+  @@index([userId, downloadedAt])
+}
+
+model UserProgress {
+  id             String   @id @default(cuid())
+  userId         String
+  classLevel     Int
+  subject        String
+  board          String
+  weakTopics     String[]
+  strongTopics   String[]
+  scoreAverage   Float    @default(0)
+  streakDays     Int      @default(0)
+  revisionDueAt  DateTime?
+  lastActivityAt DateTime?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, classLevel, subject, board])
+}
+
+model StudyPlan {
+  id               String          @id @default(cuid())
+  userId           String
+  title            String
+  goals            Json
+  dailyGoals       Json
+  recommendations  Json
+  revisionSchedule Json
+  weakTopics       String[]
+  startsAt         DateTime
+  endsAt           DateTime
+  status           StudyPlanStatus @default(ACTIVE)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model MockTest {
+  id            String         @id @default(cuid())
+  userId        String
+  paperId       String?
+  title         String
+  classLevel    Int
+  subject       String
+  board         String
+  questions     Json
+  answerKey     Json?
+  feedback      Json?
+  status        MockTestStatus @default(GENERATED)
+  score         Float?
+  generatedByAi Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AnswerEvaluation {
+  id                 String         @id @default(cuid())
+  userId             String
+  paperId            String?
+  mockTestId         String?
+  submissionType     SubmissionType
+  answerText         String?
+  answerFileUrl      String?
+  rubric             Json?
+  marksAwarded       Float
+  totalMarks         Float
+  improvements       Json?
+  mistakes           Json?
+  idealAnswer        Json?
+  scoringExplanation String?
+  grammarIssues      Json?
+  topperAnswer       Json?
+  provider           String?
+  modelName          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paper              Paper?         @relation(fields: [paperId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([paperId])
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  channel   NotificationChannel @default(IN_APP)
+  status    NotificationStatus  @default(PENDING)
+  metadata  Json?
+  sentAt    DateTime?
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+model AIUsageEvent {
+  id            String          @id @default(cuid())
+  userId        String?
+  paperId       String?
+  metricType    UsageMetricType
+  provider      String?
+  modelName     String?
+  inputTokens   Int?
+  outputTokens  Int?
+  estimatedCost Decimal?        @db.Decimal(10, 4)
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  paper         Paper?          @relation(fields: [paperId], references: [id], onDelete: SetNull)
+
+  @@index([metricType, createdAt])
+  @@index([userId, createdAt])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}
+
+model LeaderboardEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  scope     String
+  subject   String?
+  points    Int
+  rank      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, subject])
+  @@index([scope, subject, points])
+}
+
+model PaymentOrder {
+  id                String             @id @default(cuid())
+  userId            String
+  provider          String             @default("RAZORPAY")
+  orderId           String             @unique
+  receipt           String             @unique
+  amountPaise       Int
+  currency          String             @default("INR")
+  purpose           String?
+  status            PaymentOrderStatus @default(CREATED)
+  notes             Json?
+  providerPayload   Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction       PaymentTransaction?
+
+  @@index([userId, status, createdAt])
+}
+
+model PaymentTransaction {
+  id                  String         @id @default(cuid())
+  userId              String
+  paymentOrderId      String         @unique
+  provider            String         @default("RAZORPAY")
+  paymentId           String?        @unique
+  orderId             String
+  signature           String?
+  status              PaymentStatus   @default(CREATED)
+  amountPaise         Int
+  currency            String         @default("INR")
+  metadata            Json?
+  verifiedAt          DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentOrder        PaymentOrder   @relation(fields: [paymentOrderId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([orderId])
+}

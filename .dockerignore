@@ -1,0 +1,53 @@
+# Virtual environments & caches
+venv
+.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Environment files
+.env
+.env.*
+
+# Database files
+vedaapex.db
+*.db
+
+# Logs & uploads
+logs
+app/logs
+app/uploads
+static
+
+# Git
+.git
+.github
+
+# Full backend directories (not needed for Search Aggregation)
+app/
+deploy/
+docs/
+tests/
+vedaapex-backend/
+vedaapex-meadia/
+vedaapex-search-aggregation/
+vedaapex-space-image/
+vedaapex-video-search/
+
+# Documentation (not needed in Docker image)
+*.md
+!README.md
+
+# Test files
+test_*.py
+verify_*.py
+
+# Config files not needed in container
+docker-compose*.yml
+fly.media.toml
+railway.media.toml
+render.yaml
+setup.bat
+setup.sh
+*.toml

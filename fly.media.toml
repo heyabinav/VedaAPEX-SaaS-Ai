@@ -1,0 +1,30 @@
+app = "vedaapex-media"
+primary_region = "sin"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  WEB_CONCURRENCY = "2"
+
+[deploy]
+  strategy = "rolling"
+
+[processes]
+  app = "gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 2 --timeout 300"
+
+[checks]
+  [checks.media_health]
+    type = "http"
+    port = 8000
+    method = "get"
+    path = "/health"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "30s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"
