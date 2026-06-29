@@ -31,14 +31,14 @@ class User(UserBase, table=True):
     provider_id: Optional[str] = Field(default=None, index=True)  # provider's subject/id
 
     # Existing relationships
-    subscription: Optional["Subscription"] = Relationship(back_populates="user")
+    subscription: "Subscription" = Relationship(back_populates="user")
     generations: List["Generation"] = Relationship(back_populates="user")
 
     # Token system relationships
-    wallet: Optional["TokenWallet"] = Relationship(back_populates="user")
+    wallet: "TokenWallet" = Relationship(back_populates="user")
     transactions: List["TokenTransaction"] = Relationship(back_populates="user")
     generation_history: List["AIGenerationHistory"] = Relationship(back_populates="user")
-    user_subscription: Optional["UserSubscription"] = Relationship(back_populates="user")
+    user_subscription: "UserSubscription" = Relationship(back_populates="user")
     daily_rewards: List["DailyReward"] = Relationship(back_populates="user")
     promo_usages: List["PromoCodeUsage"] = Relationship(back_populates="user")
     sessions: List["UserSession"] = Relationship(back_populates="user")

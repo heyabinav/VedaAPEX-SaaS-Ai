@@ -58,7 +58,7 @@ class TokenWallet(SQLModel, table=True):
     lifetime_spent: int = Field(default=0)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="wallet")
+    user: "User" = Relationship(back_populates="wallet")
 
 
 # ─── Token Transactions ─────────────────────────────────
@@ -74,7 +74,7 @@ class TokenTransaction(SQLModel, table=True):
     ip_address: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="transactions")
+    user: "User" = Relationship(back_populates="transactions")
 
 
 # ─── AI Generation History ───────────────────────────────
@@ -93,7 +93,7 @@ class AIGenerationHistory(SQLModel, table=True):
     duration_ms: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="generation_history")
+    user: "User" = Relationship(back_populates="generation_history")
 
 
 # ─── Subscription Plans ──────────────────────────────────
@@ -127,7 +127,7 @@ class UserSubscription(SQLModel, table=True):
     payment_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="user_subscription")
+    user: "User" = Relationship(back_populates="user_subscription")
     plan: Optional[SubscriptionPlan] = Relationship(back_populates="user_subscriptions")
 
 
@@ -140,7 +140,7 @@ class DailyReward(SQLModel, table=True):
     streak: int = Field(default=1)
     claimed_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="daily_rewards")
+    user: "User" = Relationship(back_populates="daily_rewards")
 
 
 # ─── Promo Codes ─────────────────────────────────────────
@@ -166,7 +166,7 @@ class PromoCodeUsage(SQLModel, table=True):
     credits_awarded: int
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="promo_usages")
+    user: "User" = Relationship(back_populates="promo_usages")
     promo_code: Optional[PromoCode] = Relationship(back_populates="usages")
 
 
@@ -181,7 +181,7 @@ class UserSession(SQLModel, table=True):
     expires_at: datetime
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="sessions")
+    user: "User" = Relationship(back_populates="sessions")
 
 
 # ─── Request Log ─────────────────────────────────────────
@@ -209,7 +209,7 @@ class APIKey(SQLModel, table=True):
     expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="api_keys")
+    user: "User" = Relationship(back_populates="api_keys")
 
 
 # ─── API Usage Tracking ─────────────────────────────────
@@ -222,7 +222,7 @@ class APIUsage(SQLModel, table=True):
     date: str = Field(index=True)  # YYYY-MM-DD
     last_requested_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="api_usage")
+    user: "User" = Relationship(back_populates="api_usage")
 
 
 # ─── Payments ────────────────────────────────────────────────────────────

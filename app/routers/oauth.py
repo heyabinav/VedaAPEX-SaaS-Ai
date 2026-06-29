@@ -1,27 +1,38 @@
-"""app/routers/oauth.py - unified OAuth callback endpoint for Google and GitHub"""
+"""OAuth router for GitHub and Google via Supabase."""
 
+import asyncio
 import logging
 import os
-from typing import Optional
-from fastapi import APIRouter, Request, Response, Depends, HTTPException
-from fastapi.responses import RedirectResponse, JSONResponse
-from sqlmodel import Session, select
-import re
+import uuid
+from typing import Any, Optional
+from urllib.parse import urlencode
 
-from app.services.supabase_oauth import (
-    exchange_code_for_token,
-    detect_provider_from_payload,
-    normalize_supabase_user,
-    fetch_user_from_access_token,
-    SupabaseOAuthError,
-)
-from app.db.session import get_session
-from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlmodel import Session, select
+
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash
+from app.db.session import get_session
+from app.models.user import User
+from app.services.token_service import TokenService
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover
+    load_dotenv = None
+
+try:
+    from supabase import Client, create_client
+except ImportError:  # pragma: no cover
+    Client = Any
+    create_client = None
 
 logger = logging.getLogger("auth.oauth")
 router = APIRouter()
+
+if load_dotenv:
+    load_dotenv()
 
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", settings.SESSION_COOKIE_NAME)
 SESSION_COOKIE_MAX_AGE = int(os.getenv("SESSION_COOKIE_MAX_AGE", settings.SESSION_COOKIE_MAX_AGE))
@@ -31,279 +42,314 @@ SESSION_COOKIE_SECURE = (
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", settings.SESSION_COOKIE_SAMESITE)
 
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL") or settings.FRONTEND_BASE_URL or None
-APP_BASE_URL = os.getenv("APP_BASE_URL") or settings.APP_BASE_URL or None
+SUPABASE_URL = (os.getenv("SUPABASE_URL") or settings.SUPABASE_URL or "").rstrip("/")
+SUPABASE_SERVICE_KEY = (
+    os.getenv("SUPABASE_SERVICE_KEY")
+    or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or settings.SUPABASE_SERVICE_ROLE_KEY
+    or settings.SUPABASE_KEY
+    or ""
+)
+FRONTEND_URL = os.getenv("FRONTEND_URL") or settings.FRONTEND_BASE_URL or ""
+APP_BASE_URL = os.getenv("APP_BASE_URL") or settings.APP_BASE_URL or ""
 
-# Regex pattern for safe relative state URLs (allows provider prefix like "google:" or "github:")
-_ALLOWED_RELATIVE_STATE = re.compile(r"^(google:|github:|)\/[A-Za-z0-9_\-\/\?\=\&\#]*$")
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID") or os.getenv("GITHUB_OAUTH_CLIENT_ID") or settings.GITHUB_OAUTH_CLIENT_ID or ""
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET") or os.getenv("GITHUB_OAUTH_CLIENT_SECRET") or settings.GITHUB_OAUTH_CLIENT_SECRET or ""
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("GOOGLE_OAUTH_CLIENT_ID") or settings.GOOGLE_OAUTH_CLIENT_ID or ""
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET") or os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or settings.GOOGLE_OAUTH_CLIENT_SECRET or ""
+
+supabase_client: Optional[Client] = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY and create_client:
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        logger.info("Supabase client initialized for OAuth router")
+    except Exception as exc:
+        logger.error("Failed to initialize Supabase client: %s", exc, exc_info=True)
+        supabase_client = None
+else:
+    logger.warning("Supabase client not initialized for OAuth router")
 
 
-def _safe_frontend_redirect(state: Optional[str] = None) -> str:
-    """Generate a safe redirect URL to frontend with optional state parameter."""
-    base = FRONTEND_BASE_URL
-    if not base:
-        raise HTTPException(status_code=500, detail="FRONTEND_BASE_URL not configured")
-    base = base.rstrip("/")
+def _get_supabase_client() -> Client:
+    if supabase_client is None:
+        raise HTTPException(status_code=500, detail="Supabase is not configured")
+    return supabase_client
+
+
+def _backend_callback_url(request: Request, provider: str) -> str:
+    base = APP_BASE_URL.rstrip("/") if APP_BASE_URL else str(request.base_url).rstrip("/")
+    return f"{base}/auth/callback?provider={provider}"
+
+
+def _frontend_redirect_url(token: str, provider: str, email: Optional[str]) -> str:
+    if not FRONTEND_URL:
+        raise HTTPException(status_code=500, detail="FRONTEND_URL not configured")
+    params = {
+        "token": token,
+        "provider": provider,
+        "email": email or "",
+    }
+    separator = "&" if "?" in FRONTEND_URL else "?"
+    return f"{FRONTEND_URL.rstrip('/')}{separator}{urlencode(params)}"
+
+
+def _provider_from_state(state: Optional[str]) -> Optional[str]:
     if not state:
-        return f"{base}/"
-    if not _ALLOWED_RELATIVE_STATE.match(state):
-        logger.warning("Rejected unsafe state for redirect: %s", state)
-        return f"{base}/"
-    return f"{base}{state}"
+        return None
+    state_value = state.strip().lower()
+    if state_value.startswith("google:") or state_value == "google":
+        return "google"
+    if state_value.startswith("github:") or state_value == "github":
+        return "github"
+    if "google" in state_value:
+        return "google"
+    if "github" in state_value:
+        return "github"
+    return None
+
+
+def _safe_get(data: Any, key: str, default: Any = None) -> Any:
+    if isinstance(data, dict):
+        return data.get(key, default)
+    return getattr(data, key, default)
+
+
+def _extract_response_url(response: Any) -> Optional[str]:
+    for key in ("url", "redirect_url", "provider_url", "authorization_url"):
+        value = _safe_get(response, key)
+        if value:
+            return str(value)
+    if isinstance(response, dict):
+        for key in ("url", "redirect_url", "provider_url", "authorization_url"):
+            value = response.get(key)
+            if value:
+                return str(value)
+    return None
+
+
+def _extract_session_payload(result: Any) -> tuple[dict[str, Any], dict[str, Any], Optional[str]]:
+    if isinstance(result, dict):
+        user = result.get("user") or {}
+        session_data = result.get("session") or {}
+        access_token = session_data.get("access_token") or result.get("access_token")
+        return user or {}, session_data or {}, access_token
+
+    user = _safe_get(result, "user") or {}
+    session_data = _safe_get(result, "session") or {}
+    access_token = _safe_get(session_data, "access_token") or _safe_get(result, "access_token")
+    return user or {}, session_data or {}, access_token
+
+
+async def _supabase_call(func):
+    return await asyncio.to_thread(func)
+
+
+async def _upsert_supabase_user_profile(user_payload: dict[str, Any], provider: str) -> None:
+    try:
+        client = _get_supabase_client()
+        user_id = user_payload.get("id") or user_payload.get("sub") or user_payload.get("user_id")
+        email = user_payload.get("email")
+        meta = user_payload.get("user_metadata") or user_payload.get("app_metadata") or {}
+        profile = {
+            "id": str(user_id) if user_id else None,
+            "email": email,
+            "full_name": meta.get("full_name") or meta.get("name") or user_payload.get("name"),
+            "provider": provider,
+            "provider_id": str(user_id) if user_id else None,
+            "avatar_url": user_payload.get("avatar_url") or user_payload.get("picture") or meta.get("avatar_url"),
+        }
+        payload = {key: value for key, value in profile.items() if value is not None}
+
+        def _execute():
+            return client.table("users").upsert(payload, on_conflict="email").execute()
+
+        await _supabase_call(_execute)
+    except Exception as exc:
+        logger.warning("Supabase users upsert skipped/failed: %s", exc)
+
+
+async def _save_local_user(
+    session: Session,
+    provider: str,
+    user_payload: dict[str, Any],
+) -> User:
+    email = user_payload.get("email") or f"oauth_{provider}_{user_payload.get('id', uuid.uuid4().hex)}@noemail.local"
+    meta = user_payload.get("user_metadata") or user_payload.get("app_metadata") or {}
+    full_name = meta.get("full_name") or meta.get("name") or user_payload.get("name")
+    provider_id = user_payload.get("id") or user_payload.get("sub") or user_payload.get("user_id")
+
+    local_user = session.exec(select(User).where(User.email == email)).first()
+    if local_user:
+        dirty = False
+        if full_name and local_user.full_name != full_name:
+            local_user.full_name = full_name
+            dirty = True
+        if provider and local_user.provider != provider:
+            local_user.provider = provider
+            dirty = True
+        if provider_id and local_user.provider_id != str(provider_id):
+            local_user.provider_id = str(provider_id)
+            dirty = True
+        if not local_user.referral_code:
+            local_user.referral_code = f"VEDA{uuid.uuid4().hex[:8].upper()}"
+            dirty = True
+        if dirty:
+            session.add(local_user)
+            session.commit()
+            session.refresh(local_user)
+    else:
+        referral_code = f"VEDA{uuid.uuid4().hex[:8].upper()}"
+        new_user = User(
+            email=email,
+            full_name=full_name,
+            hashed_password=get_password_hash(os.urandom(24).hex()),
+            role="USER",
+            referral_code=referral_code,
+            provider=provider,
+            provider_id=str(provider_id) if provider_id else None,
+            last_login_at=None,
+        )
+        session.add(new_user)
+        session.commit()
+        session.refresh(new_user)
+        local_user = new_user
+
+        try:
+            TokenService.create_wallet(session, local_user.id)
+        except Exception as exc:
+            logger.warning("Wallet creation failed for OAuth user_id=%s: %s", local_user.id, exc)
+
+    try:
+        TokenService.get_balance(session, local_user.id)
+    except ValueError:
+        try:
+            TokenService.create_wallet(session, local_user.id)
+        except Exception as exc:
+            logger.warning("Wallet ensure failed for OAuth user_id=%s: %s", local_user.id, exc)
+
+    return local_user
+
+
+async def _start_oauth_login(request: Request, provider: str) -> RedirectResponse:
+    try:
+        client = _get_supabase_client()
+        callback_url = _backend_callback_url(request, provider)
+        response = client.auth.sign_in_with_oauth(
+            {
+                "provider": provider,
+                "options": {
+                    "redirect_to": callback_url,
+                },
+            }
+        )
+        login_url = _extract_response_url(response)
+        if not login_url:
+            raise HTTPException(status_code=500, detail="Failed to generate OAuth URL")
+        return RedirectResponse(url=login_url, status_code=302)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("OAuth login start failed for provider=%s", provider)
+        raise HTTPException(status_code=500, detail=f"OAuth login failed: {str(exc)}") from exc
+
+
+@router.get("/auth/github/login")
+async def github_login(request: Request):
+    return await _start_oauth_login(request, "github")
+
+
+@router.get("/auth/google/login")
+async def google_login(request: Request):
+    return await _start_oauth_login(request, "google")
 
 
 @router.get("/auth/callback")
 async def auth_callback(
     request: Request,
-    response: Response,
     code: Optional[str] = None,
     state: Optional[str] = None,
+    provider: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
-    """
-    Unified OAuth callback endpoint for Google and GitHub.
-
-    Flow:
-    1. Receive authorization code from Supabase
-    2. Exchange code for access token (server-side)
-    3. Fetch authenticated user from Supabase /auth/v1/user
-    4. Detect provider (Google or GitHub) from Supabase response
-    5. Normalize user data
-    6. Create or update local user in database
-    7. Create secure JWT session cookie
-    8. Redirect to frontend with optional state path
-    """
-    logger.info(
-        "OAuth callback invoked from %s (client=%s)",
-        request.url,
-        request.client.host if request.client else "unknown",
-    )
-
-    # Validate authorization code
-    if not code:
-        logger.warning("OAuth callback missing code")
-        raise HTTPException(status_code=400, detail="Missing authorization code")
-
-    # Validate APP_BASE_URL is configured
-    if not APP_BASE_URL:
-        logger.error("APP_BASE_URL not configured")
-        raise HTTPException(
-            status_code=500,
-            detail="Server misconfigured for OAuth (APP_BASE_URL missing)",
-        )
-
-    redirect_uri = f"{APP_BASE_URL.rstrip('/')}/auth/callback"
-
-    # Pre-detect provider from state parameter (format: "google:/path" or "github:/path")
-    detected_provider_from_state = None
-    original_state = state
-    if state and state.startswith(("google:", "github:")):
-        provider_part, _, path_part = state.partition(":")
-        detected_provider_from_state = provider_part.lower()
-        state = path_part or "/"  # Extract the redirect path
-        logger.info("Provider detected from state parameter: %s", detected_provider_from_state)
-
-    # Step 1: Exchange authorization code for access token
     try:
-        token_payload = await exchange_code_for_token(
-            code=code,
-            redirect_uri=redirect_uri,
-            provider=detected_provider_from_state,
-            timeout=settings.SUPABASE_TIMEOUT_SECONDS,
-        )
-        logger.debug("Token payload keys: %s", list(token_payload.keys()))
-    except SupabaseOAuthError as exc:
-        logger.exception("Token exchange failed: %s", exc)
-        redirect_target = _safe_frontend_redirect("/auth/error")
-        return RedirectResponse(
-            url=f"{redirect_target}?error=token_exchange_failed", status_code=302
-        )
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing authorization code")
 
-    # Step 2: Detect provider from payload (if not already detected from state)
-    provider = detected_provider_from_state or detect_provider_from_payload(token_payload) or None
-    logger.info("Detected OAuth provider=%s", provider)
+        detected_provider = (provider or _provider_from_state(state) or "").lower() or None
+        client = _get_supabase_client()
 
-    # Step 3: Fetch user info from Supabase
-    access_token = token_payload.get("access_token")
-    user_info = None
-    if access_token:
         try:
-            user_info = await fetch_user_from_access_token(access_token)
-            logger.info(
-                "Fetched user info from Supabase for provider=%s id=%s",
-                provider,
-                user_info.get("id"),
-            )
-        except SupabaseOAuthError:
-            logger.exception(
-                "Failed to fetch user info; will fallback to token payload 'user' if present"
-            )
-            user_info = token_payload.get("user") or None
+            exchange_result = client.auth.exchange_code_for_session({"auth_code": code})
+        except TypeError:
+            exchange_result = client.auth.exchange_code_for_session(code)
 
-    # Fallback: use user from token payload if not fetched separately
-    if not user_info:
-        user_info = token_payload.get("user") or {}
-        if not user_info:
-            logger.error("No user info available from token payload")
-            redirect_target = _safe_frontend_redirect("/auth/error")
-            return RedirectResponse(url=f"{redirect_target}?error=no_user_info", status_code=302)
+        user_payload, session_payload, access_token = _extract_session_payload(exchange_result)
+        if not access_token and isinstance(exchange_result, dict):
+            access_token = exchange_result.get("access_token")
 
-    # Step 4: Normalize user data (handles Google/GitHub differences)
-    normalized = normalize_supabase_user(user_info, provider=provider)
-    if not provider:
-        provider = normalized.get("provider")
-    logger.info(
-        "Normalized user: provider=%s email=%s provider_id=%s",
-        provider,
-        normalized.get("email"),
-        normalized.get("provider_id"),
-    )
+        if not access_token:
+            raise HTTPException(status_code=500, detail="Supabase session token not available")
 
-    # Validate provider is supported
-    if provider not in (None, "google", "github"):
-        logger.warning("Unsupported provider detected: %s", provider)
+        if not detected_provider:
+            identities = user_payload.get("identities") or []
+            if identities and isinstance(identities, list):
+                first_identity = identities[0] or {}
+                detected_provider = (first_identity.get("provider") or "").lower() or None
+            if not detected_provider:
+                app_metadata = user_payload.get("app_metadata") or {}
+                detected_provider = (app_metadata.get("provider") or "").lower() or None
+            if not detected_provider:
+                detected_provider = "github" if user_payload.get("avatar_url") or user_payload.get("login") else "google"
 
-    # Step 5: Create or update local user in database
-    local_user = None
-    try:
-        email = normalized.get("email")
-        provider_id = normalized.get("provider_id")
-
-        # Try to find existing user by email (preferred)
-        if email:
-            stmt = select(User).where(User.email == email)
-            local_user = session.exec(stmt).first()
-
-        # If not found by email, try provider + provider_id
-        if not local_user and provider_id:
-            stmt2 = select(User).where(
-                User.provider == provider, User.provider_id == str(provider_id)
-            )
-            local_user = session.exec(stmt2).first()
-
-        if local_user:
-            # Update existing user if data changed
-            dirty = False
-            if normalized.get("full_name") and local_user.full_name != normalized.get("full_name"):
-                local_user.full_name = normalized.get("full_name")
-                dirty = True
-            if provider and local_user.provider != provider:
-                local_user.provider = provider
-                dirty = True
-            if provider_id and local_user.provider_id != str(provider_id):
-                local_user.provider_id = str(provider_id)
-                dirty = True
-            if not local_user.referral_code:
-                import uuid
-
-                local_user.referral_code = f"VEDA{uuid.uuid4().hex[:8].upper()}"
-                dirty = True
-            if dirty:
-                session.add(local_user)
-                session.commit()
-                session.refresh(local_user)
-            logger.info(
-                "Existing local user matched id=%s email=%s",
-                local_user.id,
-                local_user.email,
-            )
-
-            # Ensure the existing user has a wallet
+        if not user_payload:
             try:
-                from app.services.token_service import TokenService
+                user_payload = client.auth.get_user(access_token).user or {}
+            except Exception:
+                user_payload = {}
 
-                try:
-                    TokenService.get_balance(session, local_user.id)
-                except ValueError:
-                    TokenService.create_wallet(session, local_user.id)
-                    logger.info(
-                        "Created missing wallet for existing OAuth user_id=%s",
-                        local_user.id,
-                    )
-            except Exception as e:
-                logger.warning("Failed to check/create wallet for existing OAuth user: %s", e)
-        else:
-            # Create new user
-            import uuid
+        await _upsert_supabase_user_profile(user_payload, detected_provider or "google")
+        local_user = await _save_local_user(session, detected_provider or "google", user_payload)
 
-            rand_pw = os.urandom(24).hex()
-            referral_code = f"VEDA{uuid.uuid4().hex[:8].upper()}"
-            new_user = User(
-                email=normalized.get("email") or f"oauth_{provider}_{provider_id}@noemail.local",
-                full_name=normalized.get("full_name") or None,
-                hashed_password=get_password_hash(rand_pw),
-                role="USER",
-                referral_code=referral_code,
-                provider=provider,
-                provider_id=str(provider_id) if provider_id else None,
-                last_login_at=None,
-            )
-            session.add(new_user)
-            session.commit()
-            session.refresh(new_user)
-            local_user = new_user
-            logger.info(
-                "Created new local user id=%s email=%s provider=%s referral_code=%s",
-                local_user.id,
-                local_user.email,
-                provider,
-                referral_code,
-            )
+        try:
+            local_jwt = create_access_token(subject=str(local_user.id))
+        except Exception as exc:
+            logger.exception("Failed to create local JWT: %s", exc)
+            raise HTTPException(status_code=500, detail="Session creation failed") from exc
 
-            # Initialize TokenWallet
-            try:
-                from app.services.token_service import TokenService
+        email = user_payload.get("email") or local_user.email
+        frontend_redirect = _frontend_redirect_url(access_token, detected_provider or "google", email)
 
-                TokenService.create_wallet(session, local_user.id)
-                logger.info("Wallet created for OAuth user_id=%s", local_user.id)
-            except Exception as e:
-                logger.warning("Wallet creation for OAuth user failed: %s", e)
-    except Exception as exc:
-        logger.exception("Failed to upsert local user during OAuth callback: %s", exc)
-        redirect_target = _safe_frontend_redirect("/auth/error")
-        return RedirectResponse(url=f"{redirect_target}?error=user_upsert_failed", status_code=302)
-
-    # Step 6: Create secure JWT session token
-    try:
-        jwt_token = create_access_token(subject=str(local_user.id))
-    except Exception:
-        logger.exception("Failed to create session JWT")
-        redirect_target = _safe_frontend_redirect("/auth/error")
-        return RedirectResponse(
-            url=f"{redirect_target}?error=session_creation_failed", status_code=302
+        response = RedirectResponse(url=frontend_redirect, status_code=302)
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=local_jwt,
+            max_age=SESSION_COOKIE_MAX_AGE,
+            secure=SESSION_COOKIE_SECURE,
+            httponly=SESSION_COOKIE_HTTPONLY,
+            samesite=SESSION_COOKIE_SAMESITE,
+            path="/",
         )
-
-    # Step 7: Generate safe redirect URL
-    try:
-        redirect_path = state if state else "/"
-        frontend_redirect = _safe_frontend_redirect(redirect_path)
+        logger.info(
+            "OAuth success user_id=%s provider=%s email=%s",
+            local_user.id,
+            detected_provider,
+            email,
+        )
+        return response
     except HTTPException:
-        frontend_redirect = _safe_frontend_redirect("/")
-
-    # Step 8: Create response with secure cookie redirect
-    resp = RedirectResponse(url=frontend_redirect, status_code=302)
-    resp.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=jwt_token,
-        max_age=SESSION_COOKIE_MAX_AGE,
-        secure=SESSION_COOKIE_SECURE,
-        httponly=SESSION_COOKIE_HTTPONLY,
-        samesite=SESSION_COOKIE_SAMESITE,
-        path="/",
-    )
-    logger.info(
-        "OAuth login success for user_id=%s provider=%s redirect=%s",
-        local_user.id,
-        provider,
-        frontend_redirect,
-    )
-    return resp
+        raise
+    except Exception as exc:
+        logger.exception("OAuth callback failed: %s", exc)
+        redirect_base = FRONTEND_URL.rstrip("/") if FRONTEND_URL else ""
+        if redirect_base:
+            fallback = f"{redirect_base}?{urlencode({'error': 'oauth_callback_failed'})}"
+            return RedirectResponse(url=fallback, status_code=302)
+        raise HTTPException(status_code=500, detail="OAuth callback failed") from exc
 
 
 @router.get("/api/v1/auth/oauth_me")
 async def oauth_me(request: Request, session: Session = Depends(get_session)):
-    """Get current authenticated user info from OAuth session."""
-    from jose import jwt, JWTError
+    from jose import JWTError, jwt
 
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
@@ -337,7 +383,6 @@ async def oauth_me(request: Request, session: Session = Depends(get_session)):
 
 @router.post("/api/v1/auth/logout")
 async def oauth_logout(response: Response):
-    """Logout by clearing the session cookie."""
     resp = JSONResponse({"success": True, "message": "Logged out"})
     resp.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
     return resp
