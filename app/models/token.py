@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING, Any, Optional, List
+from sqlalchemy.orm import relationship
 from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime
 from enum import Enum
@@ -58,7 +57,9 @@ class TokenWallet(SQLModel, table=True):
     lifetime_spent: int = Field(default=0)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="wallet")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="wallet")
+    )
 
 
 # ─── Token Transactions ─────────────────────────────────
@@ -74,7 +75,9 @@ class TokenTransaction(SQLModel, table=True):
     ip_address: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="transactions")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="transactions")
+    )
 
 
 # ─── AI Generation History ───────────────────────────────
@@ -93,7 +96,9 @@ class AIGenerationHistory(SQLModel, table=True):
     duration_ms: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: Optional["User"] = Relationship(back_populates="generation_history")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="generation_history")
+    )
 
 
 # ─── Subscription Plans ──────────────────────────────────
@@ -112,7 +117,9 @@ class SubscriptionPlan(SQLModel, table=True):
     sort_order: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user_subscriptions: List["UserSubscription"] = Relationship(back_populates="plan")
+    user_subscriptions: Any = Relationship(
+        sa_relationship=relationship("UserSubscription", back_populates="plan")
+    )
 
 
 # ─── User Subscriptions ─────────────────────────────────
@@ -127,8 +134,12 @@ class UserSubscription(SQLModel, table=True):
     payment_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="user_subscription")
-    plan: Optional[SubscriptionPlan] = Relationship(back_populates="user_subscriptions")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="user_subscription")
+    )
+    plan: Any = Relationship(
+        sa_relationship=relationship("SubscriptionPlan", back_populates="user_subscriptions")
+    )
 
 
 # ─── Daily Rewards ───────────────────────────────────────
@@ -140,7 +151,9 @@ class DailyReward(SQLModel, table=True):
     streak: int = Field(default=1)
     claimed_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="daily_rewards")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="daily_rewards")
+    )
 
 
 # ─── Promo Codes ─────────────────────────────────────────
@@ -155,7 +168,9 @@ class PromoCode(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    usages: List["PromoCodeUsage"] = Relationship(back_populates="promo_code")
+    usages: Any = Relationship(
+        sa_relationship=relationship("PromoCodeUsage", back_populates="promo_code")
+    )
 
 
 class PromoCodeUsage(SQLModel, table=True):
@@ -166,8 +181,12 @@ class PromoCodeUsage(SQLModel, table=True):
     credits_awarded: int
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="promo_usages")
-    promo_code: Optional[PromoCode] = Relationship(back_populates="usages")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="promo_usages")
+    )
+    promo_code: Any = Relationship(
+        sa_relationship=relationship("PromoCode", back_populates="usages")
+    )
 
 
 # ─── User Sessions ───────────────────────────────────────
@@ -181,7 +200,9 @@ class UserSession(SQLModel, table=True):
     expires_at: datetime
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="sessions")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="sessions")
+    )
 
 
 # ─── Request Log ─────────────────────────────────────────
@@ -209,7 +230,9 @@ class APIKey(SQLModel, table=True):
     expires_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="api_keys")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="api_keys")
+    )
 
 
 # ─── API Usage Tracking ─────────────────────────────────
@@ -222,7 +245,9 @@ class APIUsage(SQLModel, table=True):
     date: str = Field(index=True)  # YYYY-MM-DD
     last_requested_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="api_usage")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="api_usage")
+    )
 
 
 # ─── Payments ────────────────────────────────────────────────────────────
@@ -246,7 +271,9 @@ class PaymentOrder(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     paid_at: Optional[datetime] = None
 
-    transaction: Optional["PaymentTransaction"] = Relationship(back_populates="payment_order")
+    transaction: Any = Relationship(
+        sa_relationship=relationship("PaymentTransaction", back_populates="payment_order", uselist=False)
+    )
 
 
 class PaymentTransaction(SQLModel, table=True):
@@ -266,7 +293,9 @@ class PaymentTransaction(SQLModel, table=True):
     verified_at: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    payment_order: Optional[PaymentOrder] = Relationship(back_populates="transaction")
+    payment_order: Any = Relationship(
+        sa_relationship=relationship("PaymentOrder", back_populates="transaction")
+    )
 
 
 

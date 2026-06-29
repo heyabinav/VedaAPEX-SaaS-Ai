@@ -1,11 +1,20 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Optional, List
+from typing import TYPE_CHECKING, Any, Optional, List
+from sqlalchemy.orm import relationship
 from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime
 
 if TYPE_CHECKING:
-    from app.models.token import TokenWallet
+    from app.models.token import (
+        AIGenerationHistory,
+        APIKey,
+        APIUsage,
+        DailyReward,
+        PromoCodeUsage,
+        TokenTransaction,
+        TokenWallet,
+        UserSession,
+        UserSubscription,
+    )
 
 
 class UserBase(SQLModel):
@@ -34,19 +43,41 @@ class User(UserBase, table=True):
     provider_id: Optional[str] = Field(default=None, index=True)  # provider's subject/id
 
     # Existing relationships
-    subscription: "Subscription" = Relationship(back_populates="user")
-    generations: List["Generation"] = Relationship(back_populates="user")
+    subscription: Any = Relationship(
+        sa_relationship=relationship("Subscription", back_populates="user", uselist=False)
+    )
+    generations: Any = Relationship(
+        sa_relationship=relationship("Generation", back_populates="user")
+    )
 
     # Token system relationships
-    wallet: Optional["TokenWallet"] = Relationship(back_populates="user")
-    transactions: List["TokenTransaction"] = Relationship(back_populates="user")
-    generation_history: List["AIGenerationHistory"] = Relationship(back_populates="user")
-    user_subscription: "UserSubscription" = Relationship(back_populates="user")
-    daily_rewards: List["DailyReward"] = Relationship(back_populates="user")
-    promo_usages: List["PromoCodeUsage"] = Relationship(back_populates="user")
-    sessions: List["UserSession"] = Relationship(back_populates="user")
-    api_keys: List["APIKey"] = Relationship(back_populates="user")
-    api_usage: List["APIUsage"] = Relationship(back_populates="user")
+    wallet: Any = Relationship(
+        sa_relationship=relationship("TokenWallet", back_populates="user", uselist=False)
+    )
+    transactions: Any = Relationship(
+        sa_relationship=relationship("TokenTransaction", back_populates="user")
+    )
+    generation_history: Any = Relationship(
+        sa_relationship=relationship("AIGenerationHistory", back_populates="user")
+    )
+    user_subscription: Any = Relationship(
+        sa_relationship=relationship("UserSubscription", back_populates="user", uselist=False)
+    )
+    daily_rewards: Any = Relationship(
+        sa_relationship=relationship("DailyReward", back_populates="user")
+    )
+    promo_usages: Any = Relationship(
+        sa_relationship=relationship("PromoCodeUsage", back_populates="user")
+    )
+    sessions: Any = Relationship(
+        sa_relationship=relationship("UserSession", back_populates="user")
+    )
+    api_keys: Any = Relationship(
+        sa_relationship=relationship("APIKey", back_populates="user")
+    )
+    api_usage: Any = Relationship(
+        sa_relationship=relationship("APIUsage", back_populates="user")
+    )
 
 
 class Subscription(SQLModel, table=True):
@@ -56,7 +87,9 @@ class Subscription(SQLModel, table=True):
     status: str = "active"
     current_period_end: Optional[datetime] = None
 
-    user: User = Relationship(back_populates="subscription")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="subscription")
+    )
 
 
 class Generation(SQLModel, table=True):
@@ -67,4 +100,6 @@ class Generation(SQLModel, table=True):
     output_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: User = Relationship(back_populates="generations")
+    user: Any = Relationship(
+        sa_relationship=relationship("User", back_populates="generations")
+    )
