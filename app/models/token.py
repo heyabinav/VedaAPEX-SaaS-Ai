@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime
 from enum import Enum
@@ -58,7 +58,7 @@ class TokenWallet(SQLModel, table=True):
     lifetime_spent: int = Field(default=0)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="wallet")
+    user: Optional["User"] = Relationship(back_populates="wallet")
 
 
 # ─── Token Transactions ─────────────────────────────────
@@ -74,7 +74,7 @@ class TokenTransaction(SQLModel, table=True):
     ip_address: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="transactions")
+    user: Optional["User"] = Relationship(back_populates="transactions")
 
 
 # ─── AI Generation History ───────────────────────────────
@@ -93,7 +93,7 @@ class AIGenerationHistory(SQLModel, table=True):
     duration_ms: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    user: "User" = Relationship(back_populates="generation_history")
+    user: Optional["User"] = Relationship(back_populates="generation_history")
 
 
 # ─── Subscription Plans ──────────────────────────────────
@@ -269,9 +269,6 @@ class PaymentTransaction(SQLModel, table=True):
     payment_order: Optional[PaymentOrder] = Relationship(back_populates="transaction")
 
 
-# ─── Import User for forward references ──────────────────
-# This is needed since User model references these via Relationship
-from app.models.user import User
 
 TokenWallet.model_rebuild()
 TokenTransaction.model_rebuild()

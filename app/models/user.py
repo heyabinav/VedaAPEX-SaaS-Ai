@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import TYPE_CHECKING, Optional, List
 from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from app.models.token import TokenWallet
 
 
 class UserBase(SQLModel):
@@ -35,7 +38,7 @@ class User(UserBase, table=True):
     generations: List["Generation"] = Relationship(back_populates="user")
 
     # Token system relationships
-    wallet: "TokenWallet" = Relationship(back_populates="user")
+    wallet: Optional["TokenWallet"] = Relationship(back_populates="user")
     transactions: List["TokenTransaction"] = Relationship(back_populates="user")
     generation_history: List["AIGenerationHistory"] = Relationship(back_populates="user")
     user_subscription: "UserSubscription" = Relationship(back_populates="user")
