@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,18 +30,64 @@ from app.email.routes import router as email_router
 # Advanced media routes
 from app.routes.media import router as media_router
 from app.routes.admin import router as admin_media_router
-from app.routes.processor import router as processor_router
+from app.routes.processor import processor_service, router as processor_router
+from app.services.key_manager import key_manager
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.WARNING, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("app.main")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.warning("🚀 Starting VedaCLI Backend...")
+    logger.warning("Initializing SQLModel Database Tables...")
+    try:
+        init_db()
+        logger.warning("✅ Database initialized successfully.")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize database tables: {e}", exc_info=True)
+
+    logger.warning("Initializing Email Verification Database...")
+    try:
+        init_email_db()
+        logger.warning("✅ Email verification database initialized successfully.")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize email database: {e}", exc_info=True)
+
+    logger.warning("Starting background cron scheduler...")
+    try:
+        from app.cron.daily_reset import start_cron_scheduler
+
+        start_cron_scheduler()
+        logger.warning("✅ Background cron scheduler started successfully.")
+    except Exception as e:
+        logger.error(f"❌ Failed to start cron scheduler: {e}", exc_info=True)
+
+    logger.warning("Loading API key rotation manager...")
+    try:
+        logger.warning("✅ API Key Manager loaded")
+        logger.warning("Key Status: %s", key_manager.get_status())
+    except Exception as e:
+        logger.warning(f"API key manager init skipped: {e}")
+
+    logger.warning("Warming processor models...")
+    try:
+        await processor_service.warmup_models()
+        logger.warning("✅ Processor models warmed up.")
+    except Exception as e:
+        logger.warning(f"Processor warmup skipped: {e}")
+
+    yield
+
 
 app = FastAPI(
     title="VedaCLI Media & Core API Hub",
     description="SaaS AI Media Processing Backend with Token-Based Billing and Queue Monitoring.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
@@ -133,64 +180,6 @@ app.add_middleware(
 
 
 # ────────────────────────────────────────────────────────────
-# Startup
-# ────────────────────────────────────────────────────────────
-@app.on_event("startup")
-def on_startup():
-    logger.info("🚀 Starting VedaCLI Backend...")
-    logger.info("Initializing SQLModel Database Tables...")
-    try:
-        init_db()
-        logger.info("✅ Database initialized successfully.")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize database tables: {e}", exc_info=True)
-
-    logger.info("Initializing Email Verification Database...")
-    try:
-        init_email_db()
-        logger.info("✅ Email verification database initialized successfully.")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize email database: {e}", exc_info=True)
-
-    logger.info("Starting background cron scheduler...")
-    try:
-        from app.cron.daily_reset import start_cron_scheduler
-
-        start_cron_scheduler()
-        logger.info("✅ Background cron scheduler started successfully.")
-    except Exception as e:
-        logger.error(f"❌ Failed to start cron scheduler: {e}", exc_info=True)
-
-    # Diagnostic: list all registered routes
-    logger.info("📍 Registered Routes:")
-    for route in app.routes:
-        methods = getattr(route, "methods", {"GET"})
-        path = getattr(route, "path", str(route))
-        logger.info(f"  {methods} {path}")
-
-    # Log Supabase configuration status
-    from app.services.supabase_service import SupabaseService
-
-    if SupabaseService.is_configured():
-        logger.info("✅ Supabase auth: CONFIGURED")
-    else:
-        logger.warning("⚠️  Supabase auth: NOT CONFIGURED — register/login will fail!")
-        logger.warning(
-            "⚠️  Make sure SUPABASE_URL and SUPABASE_KEY are set in environment variables"
-        )
-
-    # Log database URL (masked)
-    db_url = settings.DATABASE_URL
-    if "://" in db_url:
-        scheme = db_url.split("://")[0]
-        logger.info(f"Database backend: {scheme}")
-    else:
-        logger.info(f"Database URL: {db_url[:20]}…")
-
-    logger.info("✅ Backend startup complete!")
-
-
-# ────────────────────────────────────────────────────────────
 # Static files
 # ────────────────────────────────────────────────────────────
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
@@ -223,12 +212,17 @@ app.include_router(processor_router, prefix="/api/v1")
 # ────────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"])
 async def health():
-    return {"status": "ok", "service": "vedaapex-python-media", "version": "1.0.0"}
+    return {"status": "ok"}
 
 
 @app.get("/ready")
 async def ready():
     return {"status": "ready", "service": "vedaapex-python-media"}
+
+
+@app.get("/api/v1/admin/key-status", tags=["Admin"])
+async def key_status():
+    return key_manager.get_status()
 
 
 @app.api_route("/", methods=["GET", "HEAD"])

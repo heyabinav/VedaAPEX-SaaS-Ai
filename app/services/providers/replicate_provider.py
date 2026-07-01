@@ -2,6 +2,7 @@ import httpx
 import asyncio
 from typing import Any
 from ...core.config import settings
+from ..key_manager import key_manager
 
 
 class ReplicateProvider:
@@ -20,7 +21,7 @@ class ReplicateProvider:
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None
             for tier in range(starting_tier, 5):
-                api_key = ReplicateProvider.get_api_key(tier)
+                api_key = ReplicateProvider.get_api_key(tier) or key_manager.get_key(service="image", provider="replicate")
                 if not api_key:
                     continue
                 headers = {

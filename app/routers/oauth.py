@@ -230,7 +230,19 @@ async def _save_local_user(
     return local_user
 
 
-async def _start_oauth_login(request: Request, provider: str) -> RedirectResponse:
+def _wants_json_response(request: Request) -> bool:
+    accept_header = request.headers.get("accept", "").lower()
+    if "application/json" in accept_header:
+        return True
+
+    requested_with = request.headers.get("x-requested-with", "").lower()
+    if requested_with in {"xmlhttprequest", "fetch"}:
+        return True
+
+    return False
+
+
+async def _start_oauth_login(request: Request, provider: str) -> Response:
     try:
         client = _get_supabase_client()
         callback_url = _backend_callback_url(request, provider)
@@ -245,6 +257,17 @@ async def _start_oauth_login(request: Request, provider: str) -> RedirectRespons
         login_url = _extract_response_url(response)
         if not login_url:
             raise HTTPException(status_code=500, detail="Failed to generate OAuth URL")
+
+        if _wants_json_response(request):
+            return JSONResponse(
+                {
+                    "success": True,
+                    "provider": provider,
+                    "auth_url": login_url,
+                    "redirect": False,
+                }
+            )
+
         return RedirectResponse(url=login_url, status_code=302)
     except HTTPException:
         raise

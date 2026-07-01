@@ -1,3 +1,5 @@
+import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -13,15 +15,15 @@ from app.ffmpeg.video_processor import VideoProcessor
 from app.storage.storage_manager import storage_manager
 from app.watermark.watermark_remover import WatermarkRemover
 
-background_remover = BackgroundRemover()
-image_enhancer = ImageEnhancer()
-watermark_remover = WatermarkRemover()
-
 
 class ProcessorService:
     def __init__(self, timeout_seconds: int, max_download_mb: int):
         self.timeout_seconds = timeout_seconds
         self.max_download_bytes = max_download_mb * 1024 * 1024
+        self.background_remover = BackgroundRemover()
+        self.image_enhancer = ImageEnhancer()
+        self.watermark_remover = WatermarkRemover()
+        self._result_cache: dict[str, dict[str, Any]] = {}
 
     def download_to_temp(self, source_url: str, suffix: str) -> str:
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
@@ -44,7 +46,24 @@ class ProcessorService:
 
         return temp_file.name
 
-    def process(
+    def _make_cache_key(
+        self,
+        source_url: str,
+        asset_type: str,
+        job_type: str,
+        mime_type: str,
+        options: dict[str, Any],
+    ) -> str:
+        payload = {
+            "source_url": source_url,
+            "asset_type": asset_type,
+            "job_type": job_type,
+            "mime_type": mime_type,
+            "options": options,
+        }
+        return json.dumps(payload, sort_keys=True, default=str)
+
+    async def process(
         self,
         source_url: str,
         asset_type: str,
@@ -53,16 +72,22 @@ class ProcessorService:
         options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         options = options or {}
+        cache_key = self._make_cache_key(source_url, asset_type, job_type, mime_type, options)
+        if cache_key in self._result_cache:
+            return self._result_cache[cache_key]
+
         suffix = self._suffix_from_mime(mime_type)
-        source_path = self.download_to_temp(source_url, suffix)
+        source_path = await asyncio.to_thread(self.download_to_temp, source_url, suffix)
 
         try:
-            return self.process_local_file(source_path, asset_type, job_type, mime_type, options)
+            result = await self.process_local_file(source_path, asset_type, job_type, mime_type, options)
+            self._result_cache[cache_key] = result
+            return result
         finally:
             if os.path.exists(source_path):
                 os.remove(source_path)
 
-    def process_local_file(
+    async def process_local_file(
         self,
         source_path: str,
         asset_type: str,
@@ -73,19 +98,51 @@ class ProcessorService:
         options = options or {}
 
         if job_type == "IMAGE_BACKGROUND_REMOVAL":
-            return self._process_image_background_removal(source_path, options)
+            return await asyncio.to_thread(
+                self._process_image_background_removal, source_path, options
+            )
         if job_type == "VIDEO_BACKGROUND_REMOVAL":
-            return self._process_video_background_removal(source_path, options)
+            return await asyncio.to_thread(
+                self._process_video_background_removal, source_path, options
+            )
         if job_type == "IMAGE_WATERMARK_REMOVAL":
-            return self._process_image_watermark_removal(source_path, options)
+            return await asyncio.to_thread(
+                self._process_image_watermark_removal, source_path, options
+            )
         if job_type == "VIDEO_WATERMARK_REMOVAL":
-            return self._process_video_watermark_removal(source_path, options)
+            return await asyncio.to_thread(
+                self._process_video_watermark_removal, source_path, options
+            )
         if job_type == "IMAGE_ENHANCEMENT":
-            return self._process_image_enhancement(source_path, options)
+            return await asyncio.to_thread(self._process_image_enhancement, source_path, options)
         if job_type == "VIDEO_ENHANCEMENT":
-            return self._process_video_enhancement(source_path, options)
+            return await asyncio.to_thread(self._process_video_enhancement, source_path, options)
 
         raise ValueError(f"Unsupported job type: {job_type} for asset type: {asset_type}")
+
+    async def warmup_models(self) -> None:
+        try:
+            import cv2
+            import numpy as np
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as handle:
+                temp_path = handle.name
+
+            try:
+                dummy_image = np.zeros((64, 64, 3), dtype=np.uint8)
+                cv2.imwrite(temp_path, dummy_image)
+                await self.process_local_file(
+                    temp_path,
+                    "IMAGE",
+                    "IMAGE_BACKGROUND_REMOVAL",
+                    "image/png",
+                    {},
+                )
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        except Exception:
+            pass
 
     def _process_image_background_removal(
         self, source_path: str, options: dict[str, Any]
@@ -94,7 +151,7 @@ class ProcessorService:
         output_path = storage_manager.get_local_path(output_filename)
         background_color = self._background_tuple(options.get("backgroundColor"))
 
-        background_remover.remove_background_image(source_path, output_path, background_color)
+        self.background_remover.remove_background_image(source_path, output_path, background_color)
         self._resize_image_to_target_resolution(output_path, options.get("targetResolution"))
         output_url = storage_manager.upload_file(output_path, output_filename)
         return {"provider": "python-media-processor", "outputUrl": output_url}
@@ -118,7 +175,7 @@ class ProcessorService:
             ):
                 frame_path = os.path.join(frame_dir, frame_name)
                 frame = cv2.imread(frame_path)
-                processed = background_remover.remove_background_frame(frame, background_color)
+                processed = self.background_remover.remove_background_frame(frame, background_color)
                 processed = self._resize_frame_to_target_resolution(
                     processed, options.get("targetResolution")
                 )
@@ -149,7 +206,7 @@ class ProcessorService:
         try:
             output_filename = f"watermark_removed_{uuid.uuid4().hex}.png"
             output_path = storage_manager.get_local_path(output_filename)
-            watermark_remover.remove_watermark(
+            self.watermark_remover.remove_watermark(
                 source_path, mask_path, output_path, options.get("algorithm", "telea")
             )
             output_url = storage_manager.upload_file(output_path, output_filename)
@@ -177,7 +234,7 @@ class ProcessorService:
                 name for name in os.listdir(frame_dir) if name.endswith(".png")
             ):
                 frame_path = os.path.join(frame_dir, frame_name)
-                watermark_remover.remove_watermark(
+                self.watermark_remover.remove_watermark(
                     frame_path, mask_path, frame_path, options.get("algorithm", "telea")
                 )
 
@@ -202,7 +259,7 @@ class ProcessorService:
     ) -> dict[str, Any]:
         output_filename = f"enhanced_{uuid.uuid4().hex}.png"
         output_path = storage_manager.get_local_path(output_filename)
-        image_enhancer.enhance(
+        self.image_enhancer.enhance(
             source_path,
             output_path,
             scale=self._normalize_scale(options),
@@ -227,7 +284,7 @@ class ProcessorService:
                 name for name in os.listdir(frame_dir) if name.endswith(".png")
             ):
                 frame_path = os.path.join(frame_dir, frame_name)
-                image_enhancer.enhance(
+                self.image_enhancer.enhance(
                     frame_path,
                     frame_path,
                     scale=self._normalize_scale(options, default_scale=2),

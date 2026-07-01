@@ -107,7 +107,7 @@ async def process_media(
     _: User | None = Depends(authenticate_processor_user),
 ):
     verify_processor_job(payload.jobType)
-    result = processor_service.process(
+    result = await processor_service.process(
         str(payload.sourceUrl),
         payload.assetType,
         payload.jobType,
@@ -219,10 +219,14 @@ async def _process_uploaded_media(
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
         temp_path = temp_file.name
-        temp_file.write(await file.read())
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            temp_file.write(chunk)
 
     try:
-        result = processor_service.process_local_file(
+        result = await processor_service.process_local_file(
             temp_path, asset_type, job_type, mime_type, options
         )
         if "outputUrl" in result:

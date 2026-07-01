@@ -2,6 +2,7 @@ import httpx
 import asyncio
 from typing import Any
 from ...core.config import settings
+from ..key_manager import key_manager
 
 
 class OpenRouterProvider:
@@ -103,7 +104,7 @@ class OpenRouterProvider:
 
             # Otherwise, fall back to iterating through tiers
             for tier in range(starting_tier, 11):
-                tier_key = OpenRouterProvider.get_api_key_by_tier(tier)
+                tier_key = OpenRouterProvider.get_api_key_by_tier(tier) or key_manager.get_key(service="text", provider="openrouter")
                 if not tier_key or tier_key == api_key:
                     continue
 
