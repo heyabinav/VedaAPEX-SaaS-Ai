@@ -34,6 +34,7 @@ search_service = UnifiedSearchService(pm, cache)
     response_model=UnifiedSearchResponse,
     responses={400: {"model": ErrorResponse}, 429: {"model": ErrorResponse}},
     name="Unified Search",
+    operation_id="unified_search",
 )
 async def unified_search(
     q: str = Query(..., min_length=2, max_length=200, description="Search query"),
@@ -74,6 +75,7 @@ async def unified_search(
 @router.get(
     "/browser-search",
     name="Browser Search (SuperAI)",
+    operation_id="browser_search",
 )
 async def browser_search(
     q: str = Query(..., min_length=2, max_length=200, description="Search query"),

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["health"])
 
 
-@router.get("/health", response_model=HealthResponse, name="Health Check")
+@router.get("/health", response_model=HealthResponse, name="Health Check", operation_id="health_check")
 async def health_check():
     """
     Health check endpoint.

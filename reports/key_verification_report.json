@@ -1,0 +1,105 @@
+{
+  "summary": {
+    "total": 18,
+    "invalid_count": 1
+  },
+  "results": {
+    "SUPABASE": {
+      "masked": "https:...ase.co",
+      "valid": true,
+      "detail": "Status 404"
+    },
+    "GEMINI": {
+      "masked": "AIzaSy...TFD5pM",
+      "valid": true,
+      "detail": "Status 200"
+    },
+    "REPLICATE_API_KEY_TIER1": {
+      "masked": "r8_FAt...32PtM3",
+      "valid": true,
+      "detail": "Status 200"
+    },
+    "HUGGINGFACE_API_KEY_TIER1": {
+      "masked": "hf_YkV...ptTkcv",
+      "valid": false,
+      "detail": "HTTPSConnectionPool(host='api-inference.huggingface.co', port=443): Max retries exceeded with url: /models (Caused by NameResolutionError(\"HTTPSConnection(host='api-inference.huggingface.co', port=443): Failed to resolve 'api-inference.huggingface.co' ([Errno 11001] getaddrinfo failed)\"))"
+    },
+    "GROQ_API_KEY_TIER1": {
+      "masked": "gsk_kZ...GRkH2N",
+      "valid": true,
+      "detail": "Status 200"
+    },
+    "OPENAI_API_KEY": {
+      "masked": "(not set)",
+      "valid": null,
+      "detail": "not set"
+    },
+    "SUPABASE_KEY": {
+      "masked": "sb_pub...R-5JT2",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "SUPABASE_ANON_KEY": {
+      "masked": "eyJhbG...w3DJYU",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "SUPABASE_SERVICE_ROLE_KEY": {
+      "masked": "eyJhbG...vQ5Hv4",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "ALGORITHM": {
+      "masked": "HS256",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "FAL_API_KEY_TIER1": {
+      "masked": "225adb...16af8e",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "TENSOR_API_KEY_TIER1": {
+      "masked": "ak_ten...ey2_As",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "KREA_API_KEY_TIER1": {
+      "masked": "0fe60f...v40czr",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "FREEPIK_API_KEY_TIER1": {
+      "masked": "FPSX05...c41d1e",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    },
+    "FREE_API_KEY_TIER1": {
+      "masked": "sk-fre...70e990",
+      "valid": "format_ok",
+      "detail": "OpenAI-like (sk-)"
+    },
+    "SEGMIND_API_KEY_TIER1": {
+      "masked": "SG_d66...4b5f54",
+      "valid": "format_ok",
+      "detail": "Segmind-like (SG_)"
+    },
+    "TOGETHER_API_KEY_TIER1": {
+      "masked": "tgp_v1...uW-MPU",
+      "valid": "format_ok",
+      "detail": "TogetherAI-like (tgp_v1_)"
+    },
+    "GEMINI_API_KEY": {
+      "masked": "AIzaSy...TFD5pM",
+      "valid": "unknown",
+      "detail": "format-only check applied"
+    }
+  },
+  "invalid": [
+    {
+      "name": "HUGGINGFACE_API_KEY_TIER1",
+      "masked": "hf_YkV...ptTkcv",
+      "reason": "HTTPSConnectionPool(host='api-inference.huggingface.co', port=443): Max retries exceeded with url: /models (Caused by NameResolutionError(\"HTTPSConnection(host='api-inference.huggingface.co', port=443): Failed to resolve 'api-inference.huggingface.co' ([Errno 11001] getaddrinfo failed)\"))"
+    }
+  ]
+}

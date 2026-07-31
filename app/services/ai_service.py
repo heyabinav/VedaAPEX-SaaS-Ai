@@ -28,6 +28,9 @@ from .providers.chutes_provider import ChutesProvider
 from .providers.groq_provider import GroqProvider
 from .providers.genspark_provider import GensparkProvider
 from .providers.tripo3d_provider import Tripo3DProvider
+from .providers.triposplat_provider import TripoSplatProvider
+from .providers.triposr_provider import TripoSRProvider
+from .providers.trellis2_provider import Trellis2Provider
 from .providers.gemini_provider import GeminiProvider
 from .providers.bytez_provider import BytezProvider
 from .providers.openrouter_provider import OpenRouterProvider
@@ -129,6 +132,31 @@ class AIToolsService:
                 tier,
             )
             return result.get("images", [])
+
+        # Allow direct space/model identifiers to be passed as `provider`.
+        # Examples supported: "black-forest-labs/FLUX.2-dev", "stabilityai/stable-diffusion-3.5-large",
+        # "Qwen/Qwen-Image", "krea/Krea-2" — routes to the appropriate provider.
+        if "/" in provider:
+            owner, model_id = provider.split("/", 1)
+
+            # Krea-style model (route to KreaProvider)
+            if owner.lower() == "krea":
+                return await KreaProvider.run_model(
+                    model_id, {"prompt": prompt, "aspect_ratio": aspect_ratio, "n": num_outputs}, tier
+                )
+
+            # Replicate-style owner/model
+            if owner.lower() == "replicate":
+                return await ReplicateProvider.run_model(owner, model_id, {"prompt": prompt, "num_outputs": num_outputs, "aspect_ratio": aspect_ratio}, tier)
+
+            # Default: treat as a Hugging Face Space / Model identifier
+            result = await HuggingFaceProvider.run_model(
+                f"{owner}/{model_id}", {"inputs": prompt, "num_images": num_outputs}, tier
+            )
+            # Normalize HF outputs when possible
+            if isinstance(result, dict) and "images" in result:
+                return result.get("images")
+            return result
 
         elif provider.lower() == "replicate":
             return await ReplicateProvider.run_model(
@@ -651,6 +679,50 @@ class AIToolsService:
                 return result["choices"][0]["message"]["content"]
             return result
 
+        # Support Hugging Face owner/model text spaces such as huggingface/inference-playground
+        # and arbitrary text spaces like CohereLabs/c4ai-command.
+        elif "/" in provider:
+            owner, model_id = provider.split("/", 1)
+            if owner.lower() == "huggingface":
+                result = await HuggingFaceProvider.run_model(
+                    f"{owner}/{model_id}",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
+
+            # Treat any other owner/model identifier as a Hugging Face Space by default,
+            # unless it is one of the explicit alternative providers.
+            if owner.lower() not in {"replicate", "krea"}:
+                result = await HuggingFaceProvider.run_model(
+                    f"{owner}/{model_id}",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
+
         elif provider.lower() == "huggingface":
             result = await HuggingFaceProvider.run_model(
                 "meta-llama/Llama-3.2-3B-Instruct",
@@ -814,12 +886,30 @@ class AIToolsService:
         return result
 
     @staticmethod
-    async def generate_3d_model(prompt: str, tier: int, provider: str = "replicate"):
+    async def generate_3d_model(prompt: str, tier: int, provider: str = "replicate", image_url: str | None = None):
         if provider.lower() == "krea":
             return await KreaProvider.run_model("krea-3d-gen-v1", {"prompt": prompt}, tier)
 
         elif provider.lower() in {"tripo", "tripo3d", "tripo3d.ai"}:
             return await Tripo3DProvider.generate_model(prompt, tier)
+
+        elif provider.lower() in {"triposplat", "tripo-splat", "vast-ai/triposplat"}:
+            try:
+                return await TripoSplatProvider.generate_model(prompt, tier, image_url=image_url)
+            except Exception:
+                return await Tripo3DProvider.generate_model(prompt, tier)
+
+        elif provider.lower() in {"triposr", "tripo-sr", "stabilityai/triposr"}:
+            try:
+                return await TripoSRProvider.generate_model(prompt, tier, image_url=image_url)
+            except Exception:
+                return await Tripo3DProvider.generate_model(prompt, tier)
+
+        elif provider.lower() in {"trellis2", "trellis-2", "microsoft/trellis.2", "microsoft/trellis-2"}:
+            try:
+                return await Trellis2Provider.generate_model(prompt, tier, image_url=image_url)
+            except Exception:
+                return await Tripo3DProvider.generate_model(prompt, tier)
 
         elif provider.lower() == "piapi" or provider.lower() == "trellis":
             return await PiAPIProvider.generate_3d_trellis(prompt, tier)

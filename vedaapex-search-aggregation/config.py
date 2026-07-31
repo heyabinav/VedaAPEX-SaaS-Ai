@@ -143,6 +143,7 @@ class Settings(BaseSettings):
 
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
     def validate_config(self) -> None:
         """Validate configuration."""

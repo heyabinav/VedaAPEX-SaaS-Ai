@@ -9,12 +9,14 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+from jose import JWTError, jwt
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash
 from app.db.session import get_session
 from app.models.user import User
+from app.services.canva_oauth_service import CanvaOAuthService
 from app.services.token_service import TokenService
 
 try:
@@ -57,6 +59,9 @@ GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID") or os.getenv("GITHUB_OAUTH_CLIE
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET") or os.getenv("GITHUB_OAUTH_CLIENT_SECRET") or settings.GITHUB_OAUTH_CLIENT_SECRET or ""
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("GOOGLE_OAUTH_CLIENT_ID") or settings.GOOGLE_OAUTH_CLIENT_ID or ""
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET") or os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or settings.GOOGLE_OAUTH_CLIENT_SECRET or ""
+CANVA_CLIENT_ID = os.getenv("CANVA_CLIENT_ID") or settings.CANVA_CLIENT_ID or ""
+CANVA_CLIENT_SECRET = os.getenv("CANVA_CLIENT_SECRET") or settings.CANVA_CLIENT_SECRET or ""
+CANVA_REDIRECT_URI = os.getenv("CANVA_REDIRECT_URI") or settings.CANVA_REDIRECT_URI or ""
 
 supabase_client: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_SERVICE_KEY and create_client:
@@ -101,10 +106,14 @@ def _provider_from_state(state: Optional[str]) -> Optional[str]:
         return "google"
     if state_value.startswith("github:") or state_value == "github":
         return "github"
+    if state_value.startswith("canva:") or state_value == "canva":
+        return "canva"
     if "google" in state_value:
         return "google"
     if "github" in state_value:
         return "github"
+    if "canva" in state_value:
+        return "canva"
     return None
 
 
@@ -138,6 +147,80 @@ def _extract_session_payload(result: Any) -> tuple[dict[str, Any], dict[str, Any
     session_data = _safe_get(result, "session") or {}
     access_token = _safe_get(session_data, "access_token") or _safe_get(result, "access_token")
     return user or {}, session_data or {}, access_token
+
+
+def _decode_local_jwt_from_request(request: Request) -> Optional[str]:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        authorization = request.headers.get("authorization", "")
+        if authorization.lower().startswith("bearer "):
+            token = authorization.split(" ", 1)[1].strip()
+
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return payload.get("sub")
+    except JWTError:
+        logger.warning("Invalid local session JWT in Canva auth flow")
+        return None
+
+
+async def _get_authenticated_local_user(request: Request, session: Session) -> User:
+    user_id = _decode_local_jwt_from_request(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = session.get(User, int(user_id)) if session else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Unknown user")
+
+    return user
+
+
+def _parse_canva_state_path(state: Optional[str]) -> str:
+    if not state:
+        return "/"
+    if state.startswith("canva:"):
+        _, _, path = state.partition(":")
+        if path.startswith("/"):
+            return path
+    return "/"
+
+
+def _build_canva_frontend_redirect(state: Optional[str] = None, error: Optional[str] = None, connected: bool = False) -> str:
+    redirect_path = _parse_canva_state_path(state)
+    if redirect_path and FRONTEND_URL:
+        target = f"{FRONTEND_URL.rstrip('/')}{redirect_path}"
+    elif settings.CANVA_SUCCESS_REDIRECT_URL:
+        target = settings.CANVA_SUCCESS_REDIRECT_URL
+    elif FRONTEND_URL:
+        target = f"{FRONTEND_URL.rstrip('/')}/"
+    else:
+        target = "/"
+
+    query = {}
+    if error:
+        query["error"] = error
+    if connected:
+        query["connected"] = "true"
+
+    if not query:
+        return target
+
+    separator = "&" if "?" in target else "?"
+    return f"{target}{separator}{urlencode(query)}"
+
+
+async def _save_canva_tokens_for_user(user: User, token_data: dict[str, Any], session: Session) -> None:
+    user.canva_access_token = token_data.get("access_token")
+    user.canva_refresh_token = token_data.get("refresh_token")
+    user.canva_token_expires_at = token_data.get("expires_at")
+    if session:
+        session.add(user)
+        session.commit()
+        session.refresh(user)
 
 
 async def _supabase_call(func):
@@ -284,6 +367,81 @@ async def github_login(request: Request):
 @router.get("/auth/google/login")
 async def google_login(request: Request):
     return await _start_oauth_login(request, "google")
+
+
+@router.get("/auth/canva/login")
+async def canva_login(
+    request: Request,
+    session: Session = Depends(get_session),
+    redirect: Optional[str] = None,
+):
+    user = await _get_authenticated_local_user(request, session)
+    redirect_path = redirect if redirect and redirect.startswith("/") else "/"
+    state_value = f"canva:{redirect_path}"
+    login_url = CanvaOAuthService.build_authorization_url(state_value)
+
+    if _wants_json_response(request):
+        return JSONResponse(
+            {
+                "success": True,
+                "provider": "canva",
+                "auth_url": login_url,
+                "redirect": False,
+            }
+        )
+
+    return RedirectResponse(url=login_url, status_code=302)
+
+
+@router.get("/auth/canva/callback")
+async def canva_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    if not code:
+        return RedirectResponse(url=_build_canva_frontend_redirect(state, error="missing_code"), status_code=302)
+
+    try:
+        user = await _get_authenticated_local_user(request, session)
+    except HTTPException as exc:
+        logger.warning("Canva callback authentication failed: %s", exc.detail)
+        return RedirectResponse(url=_build_canva_frontend_redirect(state, error="authentication_required"), status_code=302)
+
+    try:
+        token_data = await CanvaOAuthService.exchange_code(code)
+    except Exception as exc:
+        logger.exception("Canva token exchange failed: %s", exc)
+        return RedirectResponse(url=_build_canva_frontend_redirect(state, error="token_exchange_failed"), status_code=302)
+
+    try:
+        await _save_canva_tokens_for_user(user, token_data, session)
+    except Exception as exc:
+        logger.exception("Failed to save Canva tokens: %s", exc)
+        return RedirectResponse(url=_build_canva_frontend_redirect(state, error="save_token_failed"), status_code=302)
+
+    return RedirectResponse(url=_build_canva_frontend_redirect(state, connected=True), status_code=302)
+
+
+@router.post("/auth/canva/refresh")
+async def canva_refresh(request: Request, session: Session = Depends(get_session)):
+    user = await _get_authenticated_local_user(request, session)
+    if not user.canva_refresh_token:
+        raise HTTPException(status_code=400, detail="Canva is not connected")
+
+    try:
+        token_data = await CanvaOAuthService.refresh_token(user.canva_refresh_token)
+    except Exception as exc:
+        logger.exception("Canva refresh token failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Unable to refresh Canva token") from exc
+
+    await _save_canva_tokens_for_user(user, token_data, session)
+    return {
+        "success": True,
+        "canva_connected": True,
+        "expires_at": token_data.get("expires_at"),
+    }
 
 
 @router.get("/auth/callback")

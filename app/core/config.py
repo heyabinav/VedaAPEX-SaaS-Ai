@@ -328,6 +328,15 @@ class Settings(BaseSettings):
     TRIPO3D_MODEL_VERSION: str = "Turbo-v1.0-20250506"
     TRIPO3D_EXPORT_FORMAT: str = "GLB"
 
+    # TripoSplat Space config
+    TRIPOSPLAT_SPACE_URL: str = "https://vast-ai-triposplat.hf.space"
+
+    # TripoSR Space config
+    TRIPOSR_SPACE_URL: str = "https://stabilityai-triposr.hf.space"
+
+    # Microsoft TRELLIS.2 Space config
+    TRELLIS2_SPACE_URL: str = "https://microsoft-trellis2.hf.space"
+
     # Ollama Base URL config
     OLLAMA_API_BASE: Optional[str] = "http://localhost:11434/v1"
 
@@ -492,9 +501,43 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_CLIENT_ID: Optional[str] = None
     GOOGLE_OAUTH_CLIENT_SECRET: Optional[str] = None
 
+    # Google Workspace OAuth
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REDIRECT_URI: Optional[str] = "http://localhost:8000/connectors/google/callback"
+
     # GitHub OAuth Credentials
     GITHUB_OAUTH_CLIENT_ID: Optional[str] = None
     GITHUB_OAUTH_CLIENT_SECRET: Optional[str] = None
+    GITHUB_CLIENT_ID: Optional[str] = None
+    GITHUB_CLIENT_SECRET: Optional[str] = None
+    GITHUB_REDIRECT_URI: Optional[str] = "http://localhost:8000/connectors/github/callback"
+
+    # Notion OAuth Credentials
+    NOTION_CLIENT_ID: Optional[str] = None
+    NOTION_CLIENT_SECRET: Optional[str] = None
+    NOTION_REDIRECT_URI: Optional[str] = "http://localhost:8000/connectors/notion/callback"
+
+    # Canva OAuth Credentials
+    CANVA_CLIENT_ID: Optional[str] = None
+    CANVA_CLIENT_SECRET: Optional[str] = None
+    CANVA_REDIRECT_URI: Optional[str] = "http://localhost:8000/connectors/canva/callback"
+    CANVA_AUTHORIZATION_URL: str = "https://accounts.canva.com/oauth/authorize"
+    CANVA_TOKEN_URL: str = "https://accounts.canva.com/oauth/token"
+    CANVA_API_BASE_URL: str = "https://api.canva.com/v1"
+    CANVA_SUCCESS_REDIRECT_URL: Optional[str] = "https://vedaapex.com/canva/return"
+    CANVA_SCOPES: Optional[str] = "openid email profile design:meta design:content design:tools:embeds"
+
+    # Encrypted OAuth token storage
+    OAUTH_TOKEN_ENCRYPTION_KEY: Optional[str] = None
+
+    # Figma OAuth / API
+    FIGMA_CLIENT_ID: Optional[str] = None
+    FIGMA_CLIENT_SECRET: Optional[str] = None
+    FIGMA_REDIRECT_URI: Optional[str] = "http://localhost:8000/connectors/figma/callback"
+    FIGMA_API_BASE_URL: str = "https://api.figma.com/v1"
+    FIGMA_AUTHORIZATION_URL: str = "https://www.figma.com/oauth"
+    FIGMA_TOKEN_URL: str = "https://www.figma.com/api/oauth/token"
 
     # App URLs
     APP_BASE_URL: Optional[str] = None
@@ -519,6 +562,27 @@ class Settings(BaseSettings):
     MEDIA_ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8080"
     MEDIA_DOWNLOAD_TIMEOUT_SECONDS: int = 120
     MEDIA_MAX_DOWNLOAD_MB: int = 150
+
+    # ── Asset Storage ─────────────────────────────────────
+    R2_ENDPOINT_URL: Optional[str] = None
+    R2_ACCESS_KEY_ID: Optional[str] = None
+    R2_SECRET_ACCESS_KEY: Optional[str] = None
+    R2_BUCKET_NAME: Optional[str] = None
+    ASSET_STORAGE_ENABLED: bool = True
+
+    # ── Platform Domain ───────────────────────────────────
+    PLATFORM_DOMAIN: Optional[str] = None
+
+    # ── Logging ───────────────────────────────────────────
+    LOG_LEVEL: str = "INFO"
+    ENABLE_FILE_LOGGING: bool = True
+    LOG_FILE_MAX_SIZE_MB: int = 50
+    LOG_FILE_BACKUP_COUNT: int = 5
+
+    # ── Security ──────────────────────────────────────────
+    MAX_UPLOAD_SIZE_MB: int = 150
+    ALLOWED_UPLOAD_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.pdf,.docx,.xlsx,.pptx"
+    ADMIN_IP_WHITELIST: Optional[str] = None
 
     class Config:
         case_sensitive = True

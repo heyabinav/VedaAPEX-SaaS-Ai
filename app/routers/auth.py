@@ -14,6 +14,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlmodel import Session
 
 from app.db.session import get_session
@@ -329,6 +330,18 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
             user, _ = SupabaseService.get_or_create_local_user(
                 session, user_data, email_fallback=email
             )
+        except OperationalError as e:
+            logger.exception("Local user sync failed due to database operational error for email=%s", email)
+            raise HTTPException(
+                status_code=503,
+                detail="Database service unavailable during login. Please try again later.",
+            ) from e
+        except SQLAlchemyError as e:
+            logger.exception("Local user sync failed due to database error for email=%s", email)
+            raise HTTPException(
+                status_code=500,
+                detail="Database error during login. Please contact support.",
+            ) from e
         except Exception as e:
             logger.exception("Local user sync failed during login for email=%s", email)
             raise HTTPException(status_code=500, detail=f"User sync failed: {str(e)}") from e

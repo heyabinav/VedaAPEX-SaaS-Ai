@@ -1,4 +1,5 @@
 import asyncio
+import cv2
 import json
 import os
 import shutil
@@ -6,24 +7,38 @@ import tempfile
 import uuid
 from typing import Any
 
-import cv2
 import requests
 
-from app.background.background_remover import BackgroundRemover
-from app.enhancer.image_enhancer import ImageEnhancer
 from app.ffmpeg.video_processor import VideoProcessor
 from app.storage.storage_manager import storage_manager
-from app.watermark.watermark_remover import WatermarkRemover
 
 
 class ProcessorService:
     def __init__(self, timeout_seconds: int, max_download_mb: int):
         self.timeout_seconds = timeout_seconds
         self.max_download_bytes = max_download_mb * 1024 * 1024
-        self.background_remover = BackgroundRemover()
-        self.image_enhancer = ImageEnhancer()
-        self.watermark_remover = WatermarkRemover()
+        self._background_remover = None
+        self._image_enhancer = None
+        self._watermark_remover = None
         self._result_cache: dict[str, dict[str, Any]] = {}
+
+    def _get_background_remover(self):
+        if self._background_remover is None:
+            from app.background.background_remover import BackgroundRemover
+            self._background_remover = BackgroundRemover()
+        return self._background_remover
+
+    def _get_image_enhancer(self):
+        if self._image_enhancer is None:
+            from app.enhancer.image_enhancer import ImageEnhancer
+            self._image_enhancer = ImageEnhancer()
+        return self._image_enhancer
+
+    def _get_watermark_remover(self):
+        if self._watermark_remover is None:
+            from app.watermark.watermark_remover import WatermarkRemover
+            self._watermark_remover = WatermarkRemover()
+        return self._watermark_remover
 
     def download_to_temp(self, source_url: str, suffix: str) -> str:
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
@@ -151,7 +166,7 @@ class ProcessorService:
         output_path = storage_manager.get_local_path(output_filename)
         background_color = self._background_tuple(options.get("backgroundColor"))
 
-        self.background_remover.remove_background_image(source_path, output_path, background_color)
+        self._get_background_remover().remove_background_image(source_path, output_path, background_color)
         self._resize_image_to_target_resolution(output_path, options.get("targetResolution"))
         output_url = storage_manager.upload_file(output_path, output_filename)
         return {"provider": "python-media-processor", "outputUrl": output_url}
@@ -175,7 +190,7 @@ class ProcessorService:
             ):
                 frame_path = os.path.join(frame_dir, frame_name)
                 frame = cv2.imread(frame_path)
-                processed = self.background_remover.remove_background_frame(frame, background_color)
+                processed = self._get_background_remover().remove_background_frame(frame, background_color)
                 processed = self._resize_frame_to_target_resolution(
                     processed, options.get("targetResolution")
                 )
@@ -206,7 +221,7 @@ class ProcessorService:
         try:
             output_filename = f"watermark_removed_{uuid.uuid4().hex}.png"
             output_path = storage_manager.get_local_path(output_filename)
-            self.watermark_remover.remove_watermark(
+            self._get_watermark_remover().remove_watermark(
                 source_path, mask_path, output_path, options.get("algorithm", "telea")
             )
             output_url = storage_manager.upload_file(output_path, output_filename)
@@ -234,7 +249,7 @@ class ProcessorService:
                 name for name in os.listdir(frame_dir) if name.endswith(".png")
             ):
                 frame_path = os.path.join(frame_dir, frame_name)
-                self.watermark_remover.remove_watermark(
+                self._get_watermark_remover().remove_watermark(
                     frame_path, mask_path, frame_path, options.get("algorithm", "telea")
                 )
 
@@ -259,7 +274,7 @@ class ProcessorService:
     ) -> dict[str, Any]:
         output_filename = f"enhanced_{uuid.uuid4().hex}.png"
         output_path = storage_manager.get_local_path(output_filename)
-        self.image_enhancer.enhance(
+        self._get_image_enhancer().enhance(
             source_path,
             output_path,
             scale=self._normalize_scale(options),
@@ -284,7 +299,7 @@ class ProcessorService:
                 name for name in os.listdir(frame_dir) if name.endswith(".png")
             ):
                 frame_path = os.path.join(frame_dir, frame_name)
-                self.image_enhancer.enhance(
+                self._get_image_enhancer().enhance(
                     frame_path,
                     frame_path,
                     scale=self._normalize_scale(options, default_scale=2),

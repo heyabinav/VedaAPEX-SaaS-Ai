@@ -30,9 +30,10 @@ class PromptGenerationRequest(BaseModel):
 
 
 class ThreeDModelGenerationRequest(BaseModel):
-    prompt: str
+    prompt: Optional[str] = None
+    image_url: Optional[str] = None
     tier: int = 1  # 1 to 8
-    provider: Optional[str] = "replicate"  # Can be "replicate", "krea", "piapi", "trellis"
+    provider: Optional[str] = "replicate"  # Can be "replicate", "krea", "piapi", "trellis", "triposplat", "triposr"
 
 
 class TTSRequest(BaseModel):

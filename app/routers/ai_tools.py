@@ -382,10 +382,11 @@ async def generate_3d_model(
         result = await check_and_log_generation(
             user=current_user,
             gen_type="3d",
-            log_prompt=request.prompt,
+            log_prompt=request.prompt or request.image_url or "",
             session=session,
             generation_func=AIToolsService.generate_3d_model,
             prompt=request.prompt,
+            image_url=request.image_url,
             tier=request.tier,
             provider=request.provider,
         )

@@ -1,38 +1,41 @@
-"""Custom exceptions."""
+"""
+Custom exceptions - Legacy compatibility layer.
+
+These exceptions inherit from the new centralized AppException hierarchy
+in app.core.exceptions to maintain backward compatibility with existing code.
+"""
+
+from app.core.exceptions import (
+    AppException as _AppException,
+    ValidationError as _ValidationError,
+    ProviderError as _ProviderError,
+    NotFoundError as _NotFoundError,
+    RateLimitError as _RateLimitError,
+)
 
 
-class VedaApexException(Exception):
-    """Base exception."""
+class VedaApexException(_AppException):
+    """Base exception - backward compatible wrapper."""
 
     def __init__(self, message: str, status_code: int = 500):
-        self.message = message
-        self.status_code = status_code
-        super().__init__(self.message)
+        super().__init__(message=message, status_code=status_code, error_code="VEDAAPEX_ERROR")
 
 
-class ValidationError(VedaApexException):
-    """Validation error."""
-
-    def __init__(self, message: str):
-        super().__init__(message, status_code=400)
+class ValidationError(_ValidationError):
+    """Validation error - backward compatible."""
+    pass
 
 
-class ProviderError(VedaApexException):
-    """Provider error."""
-
-    def __init__(self, message: str):
-        super().__init__(message, status_code=502)
+class ProviderError(_ProviderError):
+    """Provider error - backward compatible."""
+    pass
 
 
-class NotFoundError(VedaApexException):
-    """Not found error."""
-
-    def __init__(self, message: str = "Resource not found"):
-        super().__init__(message, status_code=404)
+class NotFoundError(_NotFoundError):
+    """Not found error - backward compatible."""
+    pass
 
 
-class RateLimitError(VedaApexException):
-    """Rate limit exceeded."""
-
-    def __init__(self, message: str = "Rate limit exceeded"):
-        super().__init__(message, status_code=429)
+class RateLimitError(_RateLimitError):
+    """Rate limit error - backward compatible."""
+    pass

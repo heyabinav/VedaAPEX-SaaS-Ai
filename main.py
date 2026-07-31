@@ -12,6 +12,7 @@ import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi_mcp import FastApiMCP
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -498,7 +499,12 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================================
 # CHAT ENDPOINT
 # ============================================================================
-@app.post("/api/v1/chat", response_model=ChatResponse)
+@app.post(
+    "/api/v1/chat",
+    response_model=ChatResponse,
+    tags=["chat"],
+    operation_id="chat",
+)
 async def chat(request: ChatRequest):
     try:
         user_details = await get_user_details(request.user_id)
@@ -532,6 +538,26 @@ async def chat(request: ChatRequest):
 # ============================================================================
 app.include_router(search.router)
 app.include_router(health.router)
+
+
+# ============================================================================
+# MCP SERVER INTEGRATION
+# ============================================================================
+# Keep the existing API routes intact and expose a thin MCP layer on top.
+mcp = FastApiMCP(
+    app,
+    name=config.APP_NAME,
+    description=(
+        "MCP server for the VedaApex search backend. "
+        "It exposes search, health, and chat endpoints as Claude-compatible tools."
+    ),
+    include_tags=["search", "health", "chat"],
+    headers=["authorization", "x-api-key"],
+)
+
+mcp.mount_http(app, "/mcp")
+mcp.mount_sse(app, "/sse")
+app.state.mcp_tool_names = ["health_check", "unified_search", "browser_search", "chat"]
 
 
 # ============================================================================

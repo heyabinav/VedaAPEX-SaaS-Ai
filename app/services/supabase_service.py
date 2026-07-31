@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import httpx
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlmodel import Session, select
 
 from ..core.config import settings

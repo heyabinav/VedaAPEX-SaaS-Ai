@@ -1,403 +1,111 @@
----
-title: VedaApex
-emoji: 🚀
-colorFrom: indigo
-colorTo: purple
-sdk: docker
-pinned: false
-license: mit
-app_port: 7860
----
+# VedaApex MCP Server
 
-# VedaApex Search Aggregation - Unified Backend
+This backend now runs as a FastAPI application with an MCP layer added on top. Your original REST routes continue to work, and Claude can call the same backend through MCP tools.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.110.0-green)
-![Intelligent Router](https://img.shields.io/badge/Auto%20Routing-Enabled-brightgreen)
+## What changed
 
-> Production-ready search aggregation backend with **automatic provider selection** based on query intent. Single endpoint, intelligent routing to best provider.
+- Existing FastAPI routes remain available at the original REST endpoints.
+- MCP endpoints are exposed at `/mcp` for HTTP transport and `/sse` for SSE transport.
+- Search, health, and chat endpoints are exposed as MCP tools.
 
-## 🎯 Key Features
-
-✅ **Intelligent Provider Routing** - Automatic selection based on query keywords  
-✅ **Unified Search Endpoint** - Single `/api/v1/search` for all queries  
-✅ **Multi-Provider Support** - NASA, Wikimedia Commons, Pexels  
-✅ **Fallback Providers** - Automatic failover if primary provider fails  
-✅ **Result Deduplication** - MD5-based duplicate removal  
-✅ **Smart Ranking** - Results ranked by provider relevance  
-✅ **Caching** - In-memory or Redis caching (3600s TTL)  
-✅ **Rate Limiting** - 60 requests/minute per IP  
-✅ **Async Concurrency** - Non-blocking multi-provider searches  
-✅ **Error Handling** - Graceful fallbacks with detailed logging  
-✅ **Structured Logging** - File + console output  
-✅ **OpenAPI Docs** - Interactive Swagger UI  
-
----
-
-## 🚀 Quick Start
-
-### 60 Seconds Setup
+## Installation
 
 ```bash
-# Clone project
-cd vedaapex-search-aggregation
-
-# Setup
-chmod +x setup.sh && ./setup.sh
-
-# Or Windows
-setup.bat
-
-# Run
-python app.py
-
-# Visit
-http://localhost:7860/api/v1/docs
+cd c:/Users/heyhi/Downloads/backend
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
----
+## Configuration
 
-## 🧠 Intelligent Routing
-
-### How It Works
-
-Query comes in → **Intelligent Router** → Keyword analysis → **Best provider selected** → Fallback plan created
-
-### Query Examples
-
-**Space Query:**
-```
-Query: "mars rover"
-Keywords detected: mars, rover
-Category: SPACE
-Primary: NASA
-Fallbacks: [Wikimedia, Pexels]
-```
-
-**Scientific Query:**
-```
-Query: "cancer cell"
-Keywords detected: cancer, cell
-Category: SCIENTIFIC
-Primary: Wikimedia
-Fallbacks: [NASA, Pexels]
-```
-
-**General Query:**
-```
-Query: "nature photography"
-Keywords detected: nature
-Category: GENERAL
-Primary: Pexels
-Fallbacks: [Wikimedia, NASA]
-```
-
----
-
-## 📡 Unified API
-
-### Single Endpoint
+Copy the sample environment file and adjust the values:
 
 ```bash
-GET /api/v1/search
+copy .env.example .env
 ```
 
-### Request
+Important variables:
 
 ```bash
-curl "http://localhost:7860/api/v1/search?q=cancer%20cell&media_type=image&page=1&page_size=20"
-```
-
-### Response
-
-```json
-{
-  "success": true,
-  "query": "cancer cell",
-  "selected_provider": "wikimedia",
-  "fallback_providers": ["nasa", "pexels"],
-  "results": [
-    {
-      "title": "Cancer Cell under Microscope",
-      "description": "Magnified view",
-      "media_type": "image",
-      "provider": "wikimedia",
-      "image_url": "https://...",
-      "thumbnail_url": "https://...",
-      "source_url": "https://commons.wikimedia.org/..."
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "page_size": 20,
-    "has_next": true
-  },
-  "timestamp": "2024-01-15T10:30:00",
-  "cached": false
-}
-```
-
----
-
-## 🔑 Provider Selection Keywords
-
-### Space Keywords (NASA First)
-```
-nasa, mars, moon, saturn, jupiter, galaxy, astronaut, rover, space,
-spacecraft, satellite, orbit, cosmic, star, solar, sun, planet,
-asteroid, comet, nebula, apollo, hubble, iss, esa, roscosmos
-```
-
-### Scientific Keywords (Wikimedia First)
-```
-cancer, cancer cell, microscope, biology, neuron, chemistry,
-anatomy, bacteria, virus, dna, protein, research, medical,
-science, laboratory, experiment, physics, medicine, disease
-```
-
-### General Keywords (Pexels First)
-```
-nature, dog, cat, city, business, travel, wallpaper, people,
-landscape, water, mountain, beach, forest, animal, bird,
-flower, building, street, sky, sunset
-```
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-```bash
-# App
 APP_NAME=VedaApex Search Aggregation
 APP_VERSION=1.0.0
-APP_ENV=production
+APP_ENV=development
 PORT=7860
+HOST=0.0.0.0
 
-# API Keys
-PEXELS_API_KEY=your_key
+PEXELS_API_KEY=your_pexels_key_here
 NASA_API_KEY=DEMO_KEY
 WIKIMEDIA_API_KEY=
 
-# Providers
-ENABLE_PEXELS=true
-ENABLE_WIKIMEDIA=true
-ENABLE_NASA=true
-
-# Cache
-CACHE_ENABLED=true
-CACHE_TYPE=memory     # memory or redis
-CACHE_TTL=3600
-
-# Rate Limiting
-RATE_LIMIT_PER_MINUTE=60
-
-# Query
-MIN_QUERY_LENGTH=2
-MAX_QUERY_LENGTH=200
+MCP_HTTP_PATH=/mcp
+MCP_SSE_PATH=/sse
 ```
 
----
-
-## 🏗️ Architecture
-
-```
-Request
-  ↓
-Validation
-  ↓
-Intelligent Router (Query Analysis)
-  ↓ (e.g., "mars" detected)
-Provider Selection
-  ├─ Primary: NASA
-  └─ Fallbacks: [Wikimedia, Pexels]
-  ↓
-Concurrent Multi-Provider Search
-  ├─ NASA search
-  ├─ Wikimedia search
-  └─ Pexels search
-  ↓
-Normalization + Deduplication
-  ├─ MD5 title hash for duplicates
-  └─ Result deduplication
-  ↓
-Smart Ranking
-  ├─ Provider score: NASA=3, Wiki=2, Pexels=1
-  └─ Sort by relevance
-  ↓
-Cache Storage
-  ├─ Key: md5(search:query:page)
-  └─ TTL: 3600 seconds
-  ↓
-Response (Unified Format)
-```
-
----
-
-## 💻 Example Queries
-
-### cURL
+## Run the server
 
 ```bash
-# Space search
-curl "http://localhost:7860/api/v1/search?q=mars&page_size=10"
-
-# Scientific search
-curl "http://localhost:7860/api/v1/search?q=cancer%20cell&media_type=image"
-
-# General search
-curl "http://localhost:7860/api/v1/search?q=nature&media_type=image"
-
-# Health check
-curl "http://localhost:7860/api/v1/health"
+.\.venv\Scripts\python.exe main.py
 ```
 
-### Python
+The API will be available at:
 
-```python
-import httpx
-import asyncio
+- REST docs: http://localhost:7860/api/v1/docs
+- MCP HTTP: http://localhost:7860/mcp
+- MCP SSE: http://localhost:7860/sse
 
-async def search():
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "http://localhost:7860/api/v1/search",
-            params={"q": "cancer cell", "page_size": 10}
-        )
-        data = response.json()
-        print(f"Primary: {data['selected_provider']}")
-        print(f"Results: {len(data['results'])}")
-
-asyncio.run(search())
-```
-
-### JavaScript
-
-```javascript
-const response = await fetch(
-  '/api/v1/search?q=mars&page_size=10'
-);
-const data = await response.json();
-console.log(`Provider: ${data.selected_provider}`);
-console.log(`Results: ${data.results.length}`);
-```
-
----
-
-## 🔒 Security
-
-✅ CORS enabled  
-✅ Rate limiting (60 req/min per IP)  
-✅ Input validation  
-✅ Security headers (X-Content-Type-Options, HSTS, etc)  
-✅ Structured logging  
-✅ Exception handling  
-
----
-
-## 📊 Performance
-
-| Metric | Value |
-|--------|-------|
-| Response Time (Cached) | ~50ms |
-| Response Time (Uncached) | ~1000-1500ms |
-| Throughput | 100+ RPS |
-| Cache Hit Rate | 70%+ |
-| Providers | 3 (concurrent) |
-
----
-
-## 🧪 Testing
+## Test MCP locally
 
 ```bash
-# Run tests
-pytest
-
-# With coverage
-pytest --cov=services,utils,providers
-
-# Specific test
-pytest tests/test_intelligent_router.py -v
+curl http://localhost:7860/api/v1/health
+curl http://localhost:7860/mcp
 ```
 
----
-
-## 🐳 Docker
+You can also run the test suite:
 
 ```bash
-# Build
-docker build -t vedaapex-search .
-
-# Run
-docker run -p 7860:7860 \
-  -e PEXELS_API_KEY=your_key \
-  vedaapex-search
-
-# With compose
-docker-compose up -d
+.\.venv\Scripts\python.exe -m pytest -q test_mcp.py
 ```
 
----
+## MCP tools available
 
-## 📚 Endpoints
+- `health_check` — returns service health and enabled providers
+- `unified_search` — runs the main intelligent search workflow
+- `browser_search` — runs the browser-style search helper
+- `chat` — sends a chat request to the configured LLM provider
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/search` | GET | Unified search with intelligent routing |
-| `/api/v1/health` | GET | Health check |
-| `/api/v1/docs` | GET | OpenAPI documentation |
+## Claude Desktop configuration
 
----
+Use this configuration in your Claude Desktop config file:
 
-## 🎓 How Intelligent Routing Works
-
-1. **Query Received**: `"mars rover"`
-2. **Keyword Extraction**: Detect "mars", "rover"
-3. **Category Match**: → SPACE
-4. **Provider Selection**: Primary=NASA, Fallbacks=[Wikimedia, Pexels]
-5. **Concurrent Search**: Query all enabled providers
-6. **Deduplication**: Remove duplicate titles
-7. **Ranking**: Sort by provider score
-8. **Cache**: Store result for 1 hour
-9. **Return**: Unified response
-
----
-
-## ✨ Features Highlight
-
-### Auto Provider Selection
-No frontend logic needed! Backend automatically picks the best provider.
-
-### Fallback System
-If primary provider fails, automatically tries fallbacks.
-
-### Deduplication
-Same result from multiple providers? Removed automatically.
-
-### Ranking
-Results ranked by provider relevance for query type.
-
-### Caching
-Identical queries within 1 hour use cache (50ms response).
-
----
-
-## 📖 Documentation
-
-- 📘 [ARCHITECTURE.md](ARCHITECTURE.md) - System design details
-- 📗 [QUICKSTART.md](QUICKSTART.md) - 60-second setup
-- 📕 [INTELLIGENT_ROUTING.md](INTELLIGENT_ROUTING.md) - Routing algorithm details
-- 📙 [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
-
----
-
-## 🚀 Deployment
-
-### Local Development
-```bash
-python app.py
+```json
+{
+  "mcpServers": {
+    "vedaapex": {
+      "type": "streamable-http",
+      "url": "http://localhost:7860/mcp"
+    }
+  }
+}
 ```
+
+If you prefer SSE instead of HTTP transport, use:
+
+```json
+{
+  "mcpServers": {
+    "vedaapex": {
+      "type": "sse",
+      "url": "http://localhost:7860/sse"
+    }
+  }
+}
+```
+
+## Notes
+
+- Your existing REST API behavior is preserved.
+- Authentication headers are forwarded for tool calls when present.
+- If an endpoint needs an API key, pass it through the request headers or environment variables used by the app.
+
 
 ### Docker
 ```bash

@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "vedaapex": {
+            "type": "streamable-http",
+            "url": "http://localhost:7860/mcp"
+        }
+    }
+}

@@ -12,6 +12,8 @@ Key fixes:
 import logging
 import os
 
+from fastapi import HTTPException
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import settings
@@ -54,27 +56,58 @@ def init_db():
     """Create all tables — imports every model module first so SQLModel sees them."""
     # Force import of ALL model modules so their SQLModel subclasses
     # are registered in SQLModel.metadata *before* create_all runs.
-    # NOTE: APIKey and APIUsage models live in app.models.token (the single
-    #       canonical location). The former app/models/api_key.py was a
-    #       duplicate that caused 'Table already defined' errors and has
-    #       been removed.
     import app.models.user  # noqa: F401
     import app.models.token  # noqa: F401
     import app.models.task  # noqa: F401
+    import app.models.user_oauth_tokens  # noqa: F401
+    import app.models.asset  # noqa: F401  # New: AI asset metadata, usage logs, error logs
+    import app.models.managed_connector  # noqa: F401  # Managed MCP connector registry
 
     # Log all registered SQLModel tables for startup diagnostics
     registered_tables = sorted(SQLModel.metadata.tables.keys())
     logger.info(
-        "📋 Registered SQLModel tables (%d): %s",
+        "Registered SQLModel tables (%d): %s",
         len(registered_tables),
         ", ".join(registered_tables),
     )
 
     logger.info("Running SQLModel.metadata.create_all …")
     SQLModel.metadata.create_all(engine)
-    logger.info("✅ All database tables created/verified successfully.")
+    logger.info("All database tables created/verified successfully.")
 
 
 def get_session():
-    with Session(engine) as session:
+    try:
+        session = Session(engine)
+    except OperationalError as exc:
+        logger.exception("Failed to create database session due to operational error")
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Please try again later.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Database error while opening session", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Database error occurred. Please contact support.",
+        ) from exc
+
+    try:
         yield session
+    except OperationalError as exc:
+        logger.exception("Database operational error during request handling")
+        raise HTTPException(
+            status_code=503,
+            detail="Database service unavailable. Please try again later.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Database error during request handling", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Database error occurred. Please contact support.",
+        ) from exc
+    finally:
+        session.close()
+
+
+

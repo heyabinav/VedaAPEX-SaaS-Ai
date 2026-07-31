@@ -41,6 +41,12 @@ class User(UserBase, table=True):
     subscription_end: Optional[datetime] = Field(default=None)
     provider: Optional[str] = Field(default=None, index=True)  # e.g. "google" or "github"
     provider_id: Optional[str] = Field(default=None, index=True)  # provider's subject/id
+    canva_access_token: Optional[str] = Field(default=None)
+    canva_refresh_token: Optional[str] = Field(default=None)
+    canva_token_expires_at: Optional[datetime] = Field(default=None)
+    figma_access_token: Optional[str] = Field(default=None)
+    figma_refresh_token: Optional[str] = Field(default=None)
+    figma_token_expires_at: Optional[datetime] = Field(default=None)
 
     # Existing relationships
     subscription: Any = Relationship(
