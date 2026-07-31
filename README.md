@@ -1,3 +1,13 @@
+---
+title: VedaApex
+emoji: 🚀
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # VedaApex MCP Server
 
 This backend now runs as a FastAPI application with an MCP layer added on top. Your original REST routes continue to work, and Claude can call the same backend through MCP tools.
