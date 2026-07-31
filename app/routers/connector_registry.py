@@ -14,6 +14,8 @@ from app.schemas.connector_management import (
     ManagedConnectorAuthScaffold,
     ManagedConnectorCreate,
     ManagedConnectorResponse,
+    ManagedConnectorToolCall,
+    ManagedConnectorToolCallResult,
     ManagedConnectorUpdate,
     ManagedConnectorValidationRequest,
     ManagedConnectorValidationResult,
@@ -84,11 +86,31 @@ async def validate_managed_connector(
     admin: User = Depends(admin_only),
     session: Session = Depends(get_session),
 ):
-    return await ConnectorManagementService.validate_connector(
+    return await ConnectorManagementService.validate_mcp_connector(
         session,
         admin,
         connector_id,
         refresh_tools=body.refresh_tools,
+    )
+
+
+@router.post(
+    "/{connector_id}/tools/{tool_name}/call",
+    response_model=ManagedConnectorToolCallResult,
+)
+async def call_managed_connector_tool(
+    connector_id: int,
+    tool_name: str,
+    body: ManagedConnectorToolCall,
+    admin: User = Depends(admin_only),
+    session: Session = Depends(get_session),
+):
+    return await ConnectorManagementService.call_mcp_tool(
+        session,
+        admin,
+        connector_id,
+        tool_name,
+        body.arguments,
     )
 
 

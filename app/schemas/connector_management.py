@@ -157,6 +157,17 @@ class ManagedConnectorValidationResult(BaseModel):
     validated_at: datetime
 
 
+class ManagedConnectorToolCall(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ManagedConnectorToolCallResult(BaseModel):
+    connector_id: int
+    tool_name: str
+    result: Any
+    http_status: int
+
+
 class ManagedConnectorAuthScaffold(BaseModel):
     auth_type: ConnectorAuthType
     summary: str

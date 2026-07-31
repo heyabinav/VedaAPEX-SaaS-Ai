@@ -27,6 +27,7 @@ from app.schemas.connector_management import (
     ManagedConnectorValidationResult,
 )
 from app.services.secret_vault import decrypt_json, encrypt_json, mask_secret
+from app.services.mcp_client import MCPClientError, StreamableHTTPMCPClient
 
 logger = logging.getLogger("services.connector_management")
 
@@ -450,3 +451,114 @@ class ConnectorManagementService:
         connector = ConnectorManagementService.get_connector(session, user, connector_id)
         return _connector_to_response(connector)
 
+    @staticmethod
+    async def validate_mcp_connector(
+        session: Session,
+        user: User,
+        connector_id: int,
+        refresh_tools: bool = True,
+    ) -> ManagedConnectorValidationResult:
+        connector = ConnectorManagementService.get_connector(session, user, connector_id)
+        if connector.transport != "streamable-http":
+            return await ConnectorManagementService.validate_connector(
+                session, user, connector_id, refresh_tools=refresh_tools
+            )
+
+        discovery_url = f"{connector.server_url.rstrip('/')}{connector.discovery_path or '/mcp'}"
+        tools: list[dict[str, Any]] = []
+        http_status: Optional[int] = None
+        error: Optional[str] = None
+        warnings: list[str] = []
+
+        try:
+            client = StreamableHTTPMCPClient(
+                discovery_url,
+                connector.auth_type,
+                decrypt_json(connector.auth_config_encrypted),
+            )
+            discovery = await client.discover_tools()
+            http_status = discovery.http_status
+            tools = ConnectorManagementService._extract_tools({"tools": discovery.tools})
+            if not tools:
+                warnings.append("The MCP server is reachable but exposes no tools")
+            connector.validation_status = "healthy"
+            connector.validation_error = None
+        except (MCPClientError, httpx.HTTPError) as exc:
+            error = str(exc)
+            connector.validation_status = "failed"
+            connector.validation_error = error
+            logger.warning("MCP validation failed for connector_id=%s: %s", connector_id, error)
+        finally:
+            connector.last_validated_at = datetime.utcnow()
+            connector.last_validation_http_status = http_status
+            connector.tool_count = len(tools)
+            if refresh_tools:
+                connector.discovered_tools_json = json.dumps(
+                    tools, ensure_ascii=True, separators=(",", ":")
+                )
+            connector.updated_at = datetime.utcnow()
+            session.add(connector)
+            session.commit()
+            session.refresh(connector)
+
+        return ManagedConnectorValidationResult(
+            success=error is None,
+            connector_id=connector.id or 0,
+            reachable=http_status is not None,
+            valid=error is None,
+            validation_status=connector.validation_status,
+            http_status=http_status,
+            discovery_url=discovery_url,
+            tool_count=len(tools),
+            warnings=warnings,
+            error=error,
+            validated_at=connector.last_validated_at or datetime.utcnow(),
+        )
+
+    @staticmethod
+    async def call_mcp_tool(
+        session: Session,
+        user: User,
+        connector_id: int,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = ConnectorManagementService.get_connector(session, user, connector_id)
+        if connector.transport != "streamable-http":
+            raise HTTPException(
+                status_code=400,
+                detail="Tool execution requires a streamable-http MCP connector",
+            )
+
+        discovered_tools = ConnectorManagementService._extract_tools(
+            _parse_json_field(connector.discovered_tools_json, [])
+        )
+        known_tool_names = {tool["name"] for tool in discovered_tools}
+        if not known_tool_names:
+            raise HTTPException(status_code=409, detail="Validate this connector before calling tools")
+        if tool_name not in known_tool_names:
+            raise HTTPException(status_code=404, detail="Tool was not discovered for this connector")
+
+        endpoint = f"{connector.server_url.rstrip('/')}{connector.discovery_path or '/mcp'}"
+        try:
+            client = StreamableHTTPMCPClient(
+                endpoint,
+                connector.auth_type,
+                decrypt_json(connector.auth_config_encrypted),
+            )
+            result = await client.call_tool(tool_name, arguments)
+        except (MCPClientError, httpx.HTTPError) as exc:
+            logger.warning(
+                "MCP tool call failed for connector_id=%s tool=%s: %s",
+                connector_id,
+                tool_name,
+                exc,
+            )
+            raise HTTPException(status_code=502, detail="MCP tool call failed") from exc
+
+        return {
+            "connector_id": connector.id or 0,
+            "tool_name": tool_name,
+            "result": result.result,
+            "http_status": result.http_status,
+        }
