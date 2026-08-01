@@ -65,7 +65,8 @@ torchvision>=0.15.0
 basicsr>=1.4.2
 realesrgan>=0.3.0
 supabase>=2.0.0
-fastapi-mcp>=0.4.0
+fastapi-mcp==0.4.0
+mcp==1.12.4
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
