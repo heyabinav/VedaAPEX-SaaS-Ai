@@ -6,6 +6,7 @@ from ..models.user import User
 from ..models.token import APIKey
 from .auth import get_current_user_auth
 from ..services.api_key_service import APIKeyService
+from ..services.subscription_service import SubscriptionService
 from ..services.usage_tracking_service import UsageTrackingService
 from ..services.analytics_service import AnalyticsService
 
@@ -19,7 +20,7 @@ async def generate_key(
     session: Session = Depends(get_session),
 ):
     """Generate a new secure API key (Ultra Plan required)."""
-    if not (user.subscription and user.subscription.plan.upper() == "ULTRA"):
+    if not (user.subscription and SubscriptionService.normalize_plan_code(user.subscription.plan) == "ULTRA"):
         raise HTTPException(
             status_code=403,
             detail="Developer API access requires an active Ultra Plan.",

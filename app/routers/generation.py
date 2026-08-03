@@ -5,6 +5,7 @@ from app.models.user import User
 from app.models.token import AIGenerationHistory
 from app.routers.auth import get_current_user_auth
 from app.services.token_service import TokenService
+from app.services.subscription_service import SubscriptionService
 from app.config.costs import GENERATION_COSTS
 from datetime import datetime
 
@@ -61,8 +62,7 @@ async def process_generation(
     # Check if user has an active premium subscription (Pro, Max, Ultra)
     is_free = True
     if user.subscription and user.subscription.status == "active":
-        plan_name = user.subscription.plan.upper()
-        if plan_name in ["PRO", "MAX", "ULTRA"]:
+        if SubscriptionService.is_paid_plan(user.subscription.plan):
             is_free = False
 
     # Get balance and apply cost logic

@@ -78,7 +78,8 @@ async def verify_payment_and_upgrade(
             razorpay_signature=payload.razorpay_signature,
             metadata=payload.metadata,
         )
-        return {"success": True, "message": "Pro plan activated", "data": result}
+        plan_label = result.get("subscription", {}).get("plan") or result.get("subscription", {}).get("plan_label") or "Subscription"
+        return {"success": True, "message": f"{plan_label} activated", "data": result}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

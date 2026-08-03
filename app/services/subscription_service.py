@@ -6,8 +6,7 @@ from sqlmodel import Session, select
 
 from app.models.token import SubscriptionPlan, UserSubscription
 from app.models.user import Subscription, User
-
-PAID_PLAN_NAMES = {"PRO", "MAX", "ULTRA"}
+from .plan_utils import display_plan_name, is_paid_plan, normalize_plan_code, normalize_plan_slug
 
 
 class SubscriptionService:
@@ -34,8 +33,12 @@ class SubscriptionService:
                 select(Subscription).where(Subscription.user_id == user_id)
             ).first()
             if legacy and legacy.plan:
+                plan_slug = normalize_plan_slug(legacy.plan)
                 return {
-                    "plan": legacy.plan,
+                    "plan": display_plan_name(legacy.plan),
+                    "plan_name": display_plan_name(legacy.plan),
+                    "plan_slug": plan_slug,
+                    "plan_code": normalize_plan_code(legacy.plan),
                     "status": legacy.status,
                     "features": ["Basic features"],
                     "current_period_end": (
@@ -45,6 +48,9 @@ class SubscriptionService:
 
             return {
                 "plan": "Free",
+                "plan_name": "Free",
+                "plan_slug": "free",
+                "plan_code": "FREE",
                 "status": "active",
                 "features": [
                     "100 credits on signup",
@@ -53,12 +59,19 @@ class SubscriptionService:
                 ],
             }
 
+        plan_code = normalize_plan_code(plan.slug or plan.name)
+        plan_label = display_plan_name(plan.name or plan.slug)
         return {
-            "plan": plan.name,
+            "plan": plan_label,
+            "plan_name": plan.name,
             "plan_slug": plan.slug,
+            "plan_code": plan_code,
             "status": sub.status,
             "token_allocation": plan.token_allocation,
             "daily_credits": plan.daily_credits,
+            "price": plan.price,
+            "currency": plan.currency,
+            "billing_cycle": plan.billing_cycle,
             "features": json.loads(plan.features) if plan.features else [],
             "current_period_end": (
                 sub.current_period_end.isoformat() if sub.current_period_end else None
@@ -106,7 +119,7 @@ class SubscriptionService:
             session.add(sub)
 
         legacy = session.exec(select(Subscription).where(Subscription.user_id == user.id)).first()
-        legacy_plan = plan.name.upper() if plan.name else plan.slug.upper()
+        legacy_plan = normalize_plan_code(plan.slug or plan.name)
         if legacy:
             legacy.plan = legacy_plan
             legacy.status = "active"
@@ -123,8 +136,8 @@ class SubscriptionService:
             )
 
         # Update User model convenience fields
-        user.plan = plan.slug or plan.name.lower()
-        user.is_pro = (plan.slug or plan.name).upper() in PAID_PLAN_NAMES
+        user.plan = normalize_plan_slug(plan.slug or plan.name)
+        user.is_pro = is_paid_plan(plan.slug or plan.name)
         user.subscription_start = datetime.utcnow()
         user.subscription_end = period_end
         session.add(user)
@@ -161,4 +174,4 @@ class SubscriptionService:
 
     @staticmethod
     def is_paid_plan(plan_name: str) -> bool:
-        return plan_name.upper() in PAID_PLAN_NAMES
+        return is_paid_plan(plan_name)

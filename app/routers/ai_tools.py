@@ -350,6 +350,37 @@ async def generate_text(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/generate/text-to-text", response_model=GenerationResponse)
+async def generate_text_to_text(
+    request: TextGenerationRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    try:
+        provider = getattr(request, "provider", "auto")
+        result = await check_and_log_generation(
+            user=current_user,
+            gen_type="text",
+            log_prompt=request.prompt,
+            session=session,
+            generation_func=AIToolsService.generate_text,
+            prompt=request.prompt,
+            system_prompt=request.system_prompt,
+            tier=request.tier,
+            provider=provider,
+        )
+        if isinstance(result, list):
+            result = "".join(result)
+        elif isinstance(result, dict) and "choices" in result:
+            result = result["choices"][0]["message"]["content"]
+
+        return GenerationResponse(status="success", result=result)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/generate/prompt", response_model=GenerationResponse)
 async def generate_prompt(
     request: PromptGenerationRequest,
@@ -365,6 +396,36 @@ async def generate_prompt(
             generation_func=AIToolsService.generate_prompt,
             base_concept=request.base_concept,
         )
+        return GenerationResponse(status="success", result=result)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generate/code-generate", response_model=GenerationResponse)
+async def generate_code_generate(
+    request: CodeGenerationRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    try:
+        result = await check_and_log_generation(
+            user=current_user,
+            gen_type="code",
+            log_prompt=f"{request.language}: {request.prompt}",
+            session=session,
+            generation_func=AIToolsService.generate_code,
+            prompt=request.prompt,
+            language=request.language or "python",
+            tier=request.tier,
+            provider=request.provider,
+        )
+        if isinstance(result, list):
+            result = "".join(result)
+        elif isinstance(result, dict) and "choices" in result:
+            result = result["choices"][0]["message"]["content"]
+
         return GenerationResponse(status="success", result=result)
     except HTTPException as he:
         raise he

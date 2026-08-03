@@ -1,7 +1,7 @@
 # Core Framework
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.12
 fastapi==0.110.1
-uvicorn[standard]==0.28.0
+uvicorn==0.28.0
 starlette==0.37.2
 
 # Data Validation
@@ -25,7 +25,7 @@ python-dotenv==1.0.1
 httpx>=0.27.0
 aiohttp>=3.9.0
 requests==2.31.0
-uvloop>=0.19.0
+# uvloop removed for Windows compatibility
 
 # Email & Validation
 email-validator==2.1.0

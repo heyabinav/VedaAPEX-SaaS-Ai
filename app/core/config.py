@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    # Main database URL. Use your Supabase Postgres connection string in production.
     DATABASE_URL: str = "sqlite:///./vedaapex.db"
 
     # AI API Keys (to be filled via .env)
@@ -563,23 +564,23 @@ class Settings(BaseSettings):
     MEDIA_DOWNLOAD_TIMEOUT_SECONDS: int = 120
     MEDIA_MAX_DOWNLOAD_MB: int = 150
 
-    # ── Asset Storage ─────────────────────────────────────
+    # â”€â”€ Asset Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     R2_ENDPOINT_URL: Optional[str] = None
     R2_ACCESS_KEY_ID: Optional[str] = None
     R2_SECRET_ACCESS_KEY: Optional[str] = None
     R2_BUCKET_NAME: Optional[str] = None
     ASSET_STORAGE_ENABLED: bool = True
 
-    # ── Platform Domain ───────────────────────────────────
+    # â”€â”€ Platform Domain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     PLATFORM_DOMAIN: Optional[str] = None
 
-    # ── Logging ───────────────────────────────────────────
+    # â”€â”€ Logging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     LOG_LEVEL: str = "INFO"
     ENABLE_FILE_LOGGING: bool = True
     LOG_FILE_MAX_SIZE_MB: int = 50
     LOG_FILE_BACKUP_COUNT: int = 5
 
-    # ── Security ──────────────────────────────────────────
+    # â”€â”€ Security â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     MAX_UPLOAD_SIZE_MB: int = 150
     ALLOWED_UPLOAD_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.pdf,.docx,.xlsx,.pptx"
     ADMIN_IP_WHITELIST: Optional[str] = None

@@ -1,4 +1,4 @@
-"""Database connection and session management."""
+﻿"""Database connection and session management."""
 
 import logging
 from sqlalchemy import create_engine
@@ -24,9 +24,9 @@ def init_db() -> None:
     """Initialize database tables."""
     try:
         Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database initialized successfully")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
+        logger.error(f"Failed to initialize database: {e}")
         raise
 
 
@@ -51,3 +51,4 @@ def get_db_context():
         raise
     finally:
         db.close()
+

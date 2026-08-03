@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 import logging
 from typing import Optional
@@ -21,6 +22,7 @@ from app.storage.storage_manager import storage_manager
 from app.middleware.auth_middleware import authenticate_user
 from app.middleware.rate_limit import rate_limit
 from app.services.token_service import TokenService
+from app.services.subscription_service import SubscriptionService
 from app.workers.tasks import (
     run_image_enhancement,
     run_video_enhancement,
@@ -72,7 +74,7 @@ def verify_and_deduct_credits(session: Session, user: User, cost: int, descripti
     """
     # Pro, Max, and Ultra users are granted free usage (unlimited)
     if user.subscription and user.subscription.status == "active":
-        if user.subscription.plan.upper() in ["PRO", "MAX", "ULTRA"]:
+        if SubscriptionService.is_paid_plan(user.subscription.plan):
             return  # Premium subscription zero-credit deduction bypass
 
     # Free users are evaluated
@@ -105,12 +107,80 @@ def get_task_priority(user: User) -> str:
     if not user.subscription or user.subscription.status != "active":
         return "low_priority"
 
-    plan = user.subscription.plan.upper()
+    plan = SubscriptionService.normalize_plan_code(user.subscription.plan)
     if plan in ["ULTRA", "MAX"]:
         return "high_priority"
     elif plan == "PRO":
         return "default"
     return "low_priority"
+
+
+def _task_to_payload(task: Task) -> dict:
+    try:
+        options = json.loads(task.options_json or "{}")
+        if not isinstance(options, dict):
+            options = {}
+    except json.JSONDecodeError:
+        options = {}
+
+    progress = max(0, min(int(task.progress or 0), 100))
+    estimated_time_remaining = None
+    if task.status in {"PENDING", "PROCESSING"}:
+        if progress <= 0:
+            estimated_time_remaining = 300
+        else:
+            estimated_time_remaining = max(1, int((100 - progress) * 3))
+
+    return {
+        "task_id": task.id,
+        "type": task.type,
+        "status": task.status,
+        "progress": task.progress,
+        "progress_percent": progress,
+        "estimated_time_remaining": estimated_time_remaining,
+        "input_path": task.input_path,
+        "output_url": task.output_path,
+        "error": task.error_message,
+        "options": options,
+        "created_at": task.created_at.isoformat(),
+        "updated_at": task.updated_at.isoformat(),
+        "completed": task.status == "COMPLETED",
+        "failed": task.status == "FAILED",
+    }
+
+
+def _queue_media_task(
+    *,
+    task_id: str,
+    task_type: str,
+    input_filename: str,
+    local_path: str,
+    options: dict,
+    current_user: User,
+    background_tasks: BackgroundTasks,
+    session: Session,
+    celery_task,
+    fallback_runner,
+) -> None:
+    task = Task(
+        id=task_id,
+        user_id=current_user.id,
+        type=task_type,
+        status="PENDING",
+        progress=0,
+        input_path=input_filename,
+        options_json=json.dumps(options, ensure_ascii=True, separators=(",", ":")),
+    )
+    session.add(task)
+    session.commit()
+
+    if is_celery_active():
+        celery_task.apply_async(
+            args=[task_id, local_path, options],
+            queue=get_task_priority(current_user),
+        )
+    else:
+        background_tasks.add_task(fallback_runner, task_id, local_path, options)
 
 
 # ─── Upload API Endpoints ─────────────────────────────────
@@ -227,17 +297,6 @@ async def enhance_image(
 
     # 2. Register DB Task
     task_id = f"task_img_enh_{uuid.uuid4().hex[:16]}"
-    task = Task(
-        id=task_id,
-        user_id=current_user.id,
-        type="enhance_image",
-        status="PENDING",
-        progress=0,
-        input_path=filename,
-    )
-    session.add(task)
-    session.commit()
-
     options = {
         "scale": scale,
         "face_enhance": face_enhance,
@@ -245,13 +304,18 @@ async def enhance_image(
         "sharpen": sharpen,
     }
 
-    # 3. Schedule task with priority queuing
-    if is_celery_active():
-        enhance_image_task.apply_async(
-            args=[task_id, local_path, options], queue=get_task_priority(current_user)
-        )
-    else:
-        background_tasks.add_task(run_image_enhancement, task_id, local_path, options)
+    _queue_media_task(
+        task_id=task_id,
+        task_type="enhance_image",
+        input_filename=filename,
+        local_path=local_path,
+        options=options,
+        current_user=current_user,
+        background_tasks=background_tasks,
+        session=session,
+        celery_task=enhance_image_task,
+        fallback_runner=run_image_enhancement,
+    )
 
     return {
         "success": True,
@@ -292,17 +356,6 @@ async def enhance_video(
     )
 
     task_id = f"task_vid_enh_{uuid.uuid4().hex[:16]}"
-    task = Task(
-        id=task_id,
-        user_id=current_user.id,
-        type="enhance_video",
-        status="PENDING",
-        progress=0,
-        input_path=filename,
-    )
-    session.add(task)
-    session.commit()
-
     options = {
         "scale": scale,
         "face_enhance": face_enhance,
@@ -310,12 +363,18 @@ async def enhance_video(
         "sharpen": sharpen,
     }
 
-    if is_celery_active():
-        enhance_video_task.apply_async(
-            args=[task_id, local_path, options], queue=get_task_priority(current_user)
-        )
-    else:
-        background_tasks.add_task(run_video_enhancement, task_id, local_path, options)
+    _queue_media_task(
+        task_id=task_id,
+        task_type="enhance_video",
+        input_filename=filename,
+        local_path=local_path,
+        options=options,
+        current_user=current_user,
+        background_tasks=background_tasks,
+        session=session,
+        celery_task=enhance_video_task,
+        fallback_runner=run_video_enhancement,
+    )
 
     return {
         "success": True,
@@ -359,6 +418,8 @@ async def remove_watermark_image(
     )
 
     task_id = f"task_img_wtm_{uuid.uuid4().hex[:16]}"
+    options = {"algorithm": algorithm}
+
     task = Task(
         id=task_id,
         user_id=current_user.id,
@@ -366,11 +427,14 @@ async def remove_watermark_image(
         status="PENDING",
         progress=0,
         input_path=filename,
+        options_json=json.dumps(
+            {"algorithm": algorithm, "mask_filename": mask_filename},
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ),
     )
     session.add(task)
     session.commit()
-
-    options = {"algorithm": algorithm}
 
     if is_celery_active():
         remove_watermark_image_task.apply_async(
@@ -421,6 +485,8 @@ async def remove_watermark_video(
     )
 
     task_id = f"task_vid_wtm_{uuid.uuid4().hex[:16]}"
+    options = {"algorithm": algorithm}
+
     task = Task(
         id=task_id,
         user_id=current_user.id,
@@ -428,11 +494,14 @@ async def remove_watermark_video(
         status="PENDING",
         progress=0,
         input_path=filename,
+        options_json=json.dumps(
+            {"algorithm": algorithm, "mask_filename": mask_filename},
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ),
     )
     session.add(task)
     session.commit()
-
-    options = {"algorithm": algorithm}
 
     if is_celery_active():
         remove_watermark_video_task.apply_async(
@@ -477,10 +546,125 @@ async def get_task_status(
         "type": task.type,
         "status": task.status,
         "progress": task.progress,
+        "progress_percent": max(0, min(int(task.progress or 0), 100)),
+        "estimated_time_remaining": None if task.status in {"COMPLETED", "FAILED"} else max(1, int((100 - max(0, min(int(task.progress or 0), 100))) * 3)) if task.status in {"PENDING", "PROCESSING"} else None,
         "output_url": task.output_path,
         "error": task.error_message,
+        "options": json.loads(task.options_json or "{}"),
         "created_at": task.created_at.isoformat(),
         "updated_at": task.updated_at.isoformat(),
+    }
+
+
+@router.get("/tasks")
+async def list_tasks(
+    limit: int = 20,
+    current_user: User = Depends(authenticate_user),
+    session: Session = Depends(get_session),
+):
+    limit = max(1, min(limit, 100))
+    tasks = session.exec(
+        select(Task)
+        .where(Task.user_id == current_user.id)
+        .order_by(Task.updated_at.desc())
+        .limit(limit)
+    ).all()
+    return {
+        "success": True,
+        "items": [_task_to_payload(task) for task in tasks],
+    }
+
+
+@router.post("/task/{id}/retry")
+async def retry_task(
+    id: str,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: User = Depends(authenticate_user),
+    session: Session = Depends(get_session),
+):
+    task = session.get(Task, id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    if task.user_id != current_user.id and current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    options = json.loads(task.options_json or "{}")
+    input_filename = task.input_path
+    local_path = storage_manager.get_local_path(input_filename)
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Original input file is no longer available.")
+
+    new_task_id = f"task_retry_{uuid.uuid4().hex[:16]}"
+    retry_task_model = Task(
+        id=new_task_id,
+        user_id=current_user.id,
+        type=task.type,
+        status="PENDING",
+        progress=0,
+        input_path=task.input_path,
+        options_json=task.options_json or "{}",
+    )
+    session.add(retry_task_model)
+    session.commit()
+
+    if task.type == "enhance_image":
+        if is_celery_active():
+            enhance_image_task.apply_async(args=[new_task_id, local_path, options], queue=get_task_priority(current_user))
+        else:
+            background_tasks.add_task(run_image_enhancement, new_task_id, local_path, options)
+    elif task.type == "enhance_video":
+        if is_celery_active():
+            enhance_video_task.apply_async(args=[new_task_id, local_path, options], queue=get_task_priority(current_user))
+        else:
+            background_tasks.add_task(run_video_enhancement, new_task_id, local_path, options)
+    elif task.type == "remove_watermark_image":
+        mask_filename = options.get("mask_filename")
+        if not mask_filename:
+            raise HTTPException(status_code=400, detail="Retry requires the original watermark mask.")
+        mask_path = storage_manager.get_local_path(mask_filename)
+        if not os.path.exists(mask_path):
+            raise HTTPException(status_code=404, detail="Watermark mask file is no longer available.")
+        if is_celery_active():
+            remove_watermark_image_task.apply_async(
+                args=[new_task_id, local_path, mask_path, {"algorithm": options.get("algorithm", "telea")}],
+                queue=get_task_priority(current_user),
+            )
+        else:
+            background_tasks.add_task(
+                run_image_watermark_removal,
+                new_task_id,
+                local_path,
+                mask_path,
+                {"algorithm": options.get("algorithm", "telea")},
+            )
+    elif task.type == "remove_watermark_video":
+        mask_filename = options.get("mask_filename")
+        if not mask_filename:
+            raise HTTPException(status_code=400, detail="Retry requires the original watermark mask.")
+        mask_path = storage_manager.get_local_path(mask_filename)
+        if not os.path.exists(mask_path):
+            raise HTTPException(status_code=404, detail="Watermark mask file is no longer available.")
+        if is_celery_active():
+            remove_watermark_video_task.apply_async(
+                args=[new_task_id, local_path, mask_path, {"algorithm": options.get("algorithm", "telea")}],
+                queue=get_task_priority(current_user),
+            )
+        else:
+            background_tasks.add_task(
+                run_video_watermark_removal,
+                new_task_id,
+                local_path,
+                mask_path,
+                {"algorithm": options.get("algorithm", "telea")},
+            )
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported retry type: {task.type}")
+
+    return {
+        "success": True,
+        "message": "Task retry queued",
+        "original_task_id": task.id,
+        "task_id": new_task_id,
     }
 
 

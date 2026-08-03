@@ -18,6 +18,7 @@ from app.models.token import (
 )
 from app.models.user import User
 from app.services.subscription_service import SubscriptionService
+from app.services.plan_utils import display_plan_name
 from app.services.token_service import TokenService
 
 
@@ -118,7 +119,10 @@ class PaymentService:
                 "currency": order.currency,
                 "receipt": order.receipt,
                 "plan": plan.name,
+                "plan_label": display_plan_name(plan.name or plan.slug),
                 "plan_slug": plan.slug,
+                "plan_price": plan.price,
+                "billing_cycle": plan.billing_cycle,
                 "status": order.status,
                 "razorpay_order": order_data,
             },

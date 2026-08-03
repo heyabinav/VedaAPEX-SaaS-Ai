@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from ..config.costs import GENERATION_COSTS, SUBSCRIPTION_PLANS
 from ..models.token import AIGenerationHistory
 from ..models.user import User
+from .plan_utils import is_paid_plan, normalize_plan_code
 from .token_service import TokenService
 
 TYPE_TO_COST_KEY = {
@@ -34,8 +35,6 @@ TYPE_TO_COST_KEY = {
     "edit_3d": "MODEL_3D",
 }
 
-PAID_PLANS = {"PRO", "MAX", "ULTRA"}
-
 
 @dataclass
 class GenerationPolicy:
@@ -55,16 +54,16 @@ class GenerationPolicyService:
     @staticmethod
     def get_plan_name(user: User) -> str:
         if user.subscription and user.subscription.status == "active":
-            return user.subscription.plan.upper()
+            return normalize_plan_code(user.subscription.plan)
 
         if (
             user.user_subscription
             and user.user_subscription.status == "active"
             and user.user_subscription.plan
         ):
-            return (
-                user.user_subscription.plan.slug or user.user_subscription.plan.name or "FREE"
-            ).upper()
+            return normalize_plan_code(
+                user.user_subscription.plan.slug or user.user_subscription.plan.name
+            )
 
         return "FREE"
 
@@ -74,7 +73,8 @@ class GenerationPolicyService:
 
     @staticmethod
     def get_daily_credit_limit(plan_name: str) -> Optional[int]:
-        plan_config = SUBSCRIPTION_PLANS.get(plan_name.upper(), SUBSCRIPTION_PLANS["FREE"])
+        plan_code = normalize_plan_code(plan_name)
+        plan_config = SUBSCRIPTION_PLANS.get(plan_code, SUBSCRIPTION_PLANS["FREE"])
         daily_credits = int(plan_config.get("daily_credits", 0))
         return None if daily_credits >= 999999 else daily_credits
 
@@ -107,7 +107,7 @@ class GenerationPolicyService:
 
         wallet = TokenService.get_balance(session, user.id)
         allow_premium_fallback = (
-            use_daily_free_route or plan_name in PAID_PLANS or wallet.balance >= usage_cost
+            use_daily_free_route or is_paid_plan(plan_name) or wallet.balance >= usage_cost
         )
         charge_wallet_on_success = plan_name == "FREE" and not use_daily_free_route
 

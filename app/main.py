@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -30,6 +30,8 @@ from app.routers.payments import router as payments_router
 from app.routers.oauth import router as oauth_router
 from app.routers.canva_router import router as canva_router
 from app.routers.figma import router as figma_router
+from app.routers.search_history import router as search_history_router
+from app.routers.chat import router as chat_router
 from app.routes.canva_oauth import router as canva_oauth_router
 from app.routes.figma_oauth import router as figma_oauth_router
 from app.routers.google import router as google_router
@@ -107,15 +109,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Register centralized error handlers
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 register_error_handlers(app)
 
 
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Add Middlewares (order matters - last added = first executed)
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 app.add_middleware(APILoggerMiddleware)
 app.add_middleware(RequestContextMiddleware)
 
@@ -130,17 +132,17 @@ app.add_middleware(
 )
 
 
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Static files
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/api/v1/media/download", StaticFiles(directory=uploads_dir), name="media_downloads")
 
 
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Register routers
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Core routers
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(ai_tools_router, prefix="/api/v1")
@@ -153,6 +155,8 @@ app.include_router(api_keys_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(canva_router)
 app.include_router(figma_router)
+app.include_router(search_history_router, prefix="/api/v1")
+app.include_router(chat_router, prefix="/api/v1")
 app.include_router(canva_oauth_router)
 app.include_router(figma_oauth_router)
 app.include_router(google_router)
@@ -176,9 +180,9 @@ app.include_router(assets_router, prefix="/api/v1")
 app.include_router(admin_dashboard_router, prefix="/api/v1")
 
 
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Health / Ready / Root
-# ────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 @app.get("/health", tags=["System"])
 async def health():
     return {"status": "ok", "version": "2.0.0"}
@@ -204,7 +208,4 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-
 
