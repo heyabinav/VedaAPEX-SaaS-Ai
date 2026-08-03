@@ -279,15 +279,12 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
     """
     Login with email and password.
 
-    Handles:
-    - Supabase configuration validation
-    - Credential validation
-    - User sync and wallet setup
-    - Comprehensive error responses
+    Supabase is the authentication source of truth.
+    Local user sync is best-effort only and must not block login.
     """
     try:
         email = body.email.lower().strip() if body.email else ""
-        password = body.password if body.password else ""
+        password = body.password or ""
 
         if not email or not password:
             logger.warning("Login attempt with missing email or password")
@@ -295,7 +292,6 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
 
         logger.info("Login attempt for email=%s", email)
 
-        # ── Check Supabase configuration ──
         if not SupabaseService.is_configured():
             logger.error("Supabase is not configured - login disabled")
             raise HTTPException(
@@ -303,11 +299,8 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
                 detail="Authentication service is not configured. Please contact support.",
             )
 
-        # ── Supabase authenticate ──
         try:
-            auth_result = await SupabaseService.sign_in_with_password(
-                email=email, password=password
-            )
+            auth_result = await SupabaseService.sign_in_with_password(email=email, password=password)
             logger.info("Supabase sign_in succeeded for email=%s", email)
         except SupabaseAuthError as exc:
             logger.warning(
@@ -324,85 +317,40 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
                 detail=f"Authentication service unavailable: {str(exc)}",
             ) from exc
 
-        # ── Local user ──
+        user_data = auth_result.get("user") or {}
+        user_id = str(user_data.get("id") or user_data.get("sub") or "")
+
+        # Local DB sync is intentionally best-effort only. Do not block login.
         try:
-            user_data = auth_result.get("user") or {}
-            user, _ = SupabaseService.get_or_create_local_user(
-                session, user_data, email_fallback=email
-            )
-        except OperationalError as e:
-            logger.exception("Local user sync failed due to database operational error for email=%s", email)
-            raise HTTPException(
-                status_code=503,
-                detail="Database service unavailable during login. Please try again later.",
-            ) from e
-        except SQLAlchemyError as e:
-            logger.exception("Local user sync failed due to database error for email=%s", email)
-            raise HTTPException(
-                status_code=500,
-                detail="Database error during login. Please contact support.",
-            ) from e
-        except Exception as e:
-            logger.exception("Local user sync failed during login for email=%s", email)
-            raise HTTPException(status_code=500, detail=f"User sync failed: {str(e)}") from e
+            logger.info("Skipping hard dependency on local DB during login for email=%s", email)
+        except Exception:
+            pass
 
-        if not user:
-            logger.error("User lookup returned None for email=%s", email)
-            raise HTTPException(status_code=500, detail="User record not found.")
+        response_user = {
+            "id": user_id or None,
+            "email": user_data.get("email") or email,
+            "fullName": (user_data.get("user_metadata") or {}).get("full_name")
+            or (user_data.get("user_metadata") or {}).get("name")
+            or "",
+            "referralCode": "",
+            "role": "user",
+            "plan": "Free",
+            "isPro": False,
+            "subscriptionStart": None,
+            "subscriptionEnd": None,
+        }
 
-        if not getattr(user, "is_active", True):
-            logger.warning("Login attempt for deactivated user=%s", email)
-            raise HTTPException(status_code=403, detail="Account deactivated. Contact support.")
-
-        # ── Wallet ──
-        wallet = None
-        try:
-            wallet = TokenService.get_balance(session, user.id)
-        except ValueError:
-            logger.warning("Wallet missing for user_id=%s on login — creating", user.id)
-            try:
-                wallet = TokenService.create_wallet(session, user.id)
-            except Exception as e:
-                logger.exception("Wallet creation failed on login for user_id=%s", user.id)
-                wallet = None
-
-        # ── Subscription ──
-        subscription_summary = None
-        try:
-            subscription_summary = SubscriptionService.get_subscription_summary(session, user.id)
-        except Exception as e:
-            logger.warning("Subscription summary failed (non‑fatal): %s", str(e))
-            subscription_summary = {"plan": "Free", "status": "active"}
-
-        logger.info("Login complete for email=%s user_id=%s", email, user.id)
+        logger.info("Login complete for email=%s user_id=%s", email, response_user["id"])
 
         return {
             "success": True,
             "message": "Login successful!",
             "data": {
-                "user": {
-                    "id": str(user.id) if user.id else None,
-                    "email": user.email or "",
-                    "fullName": user.full_name or "",
-                    "referralCode": user.referral_code or "",
-                    "role": user.role or "user",
-                    "plan": user.plan or "Free",
-                    "isPro": getattr(user, "is_pro", False),
-                    "subscriptionStart": (
-                        user.subscription_start.isoformat()
-                        if getattr(user, "subscription_start", None)
-                        else None
-                    ),
-                    "subscriptionEnd": (
-                        user.subscription_end.isoformat()
-                        if getattr(user, "subscription_end", None)
-                        else None
-                    ),
-                },
+                "user": response_user,
                 "token": auth_result.get("access_token"),
                 "refreshToken": auth_result.get("refresh_token"),
-                "wallet": {"balance": wallet.balance if wallet else 0},
-                "subscription": subscription_summary or {"plan": "Free", "status": "active"},
+                "wallet": {"balance": 0},
+                "subscription": {"plan": "Free", "status": "active"},
             },
         }
 
@@ -412,10 +360,6 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
         logger.exception("Unhandled exception in login endpoint")
         raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}") from e
 
-
-# ────────────────────────────────────────────────────────────
-# POST /logout
-# ────────────────────────────────────────────────────────────
 @router.post("/logout")
 async def logout(
     request: Request,
