@@ -65,8 +65,22 @@ class SupabaseService:
         return headers
 
     @staticmethod
+    def _anon_headers() -> dict[str, str]:
+        """Headers using the anon/public key – used for user-facing auth calls."""
+        api_key = settings.SUPABASE_KEY or settings.SUPABASE_SERVICE_ROLE_KEY
+        if not api_key:
+            raise RuntimeError("Supabase auth is not configured (SUPABASE_KEY missing).")
+        return {
+            "apikey": api_key,
+            "Content-Type": "application/json",
+        }
+
+    @staticmethod
     def _extract_error(payload: Any) -> str:
         if isinstance(payload, dict):
+            # GoTrue v2 format: {"code": 400, "error_code": "...", "msg": "..."}
+            if payload.get("error_code") and payload.get("msg"):
+                return str(payload["msg"])
             error = payload.get("error")
             if isinstance(error, dict):
                 message = error.get("message") or error.get("description")
@@ -136,7 +150,7 @@ class SupabaseService:
             async with httpx.AsyncClient(timeout=settings.SUPABASE_TIMEOUT_SECONDS) as client:
                 response = await client.post(
                     f"{SupabaseService._base_url()}/auth/v1/signup",
-                    headers=SupabaseService._headers(),
+                    headers=SupabaseService._anon_headers(),
                     json=payload,
                 )
         except httpx.HTTPError as exc:
@@ -164,7 +178,7 @@ class SupabaseService:
             async with httpx.AsyncClient(timeout=settings.SUPABASE_TIMEOUT_SECONDS) as client:
                 response = await client.post(
                     f"{SupabaseService._base_url()}/auth/v1/token?grant_type=password",
-                    headers=SupabaseService._headers(),
+                    headers=SupabaseService._anon_headers(),
                     json={"email": email, "password": password},
                 )
         except httpx.HTTPError as exc:
@@ -174,10 +188,12 @@ class SupabaseService:
         data = SupabaseService._safe_json(response)
         if response.status_code != 200:
             error_msg = SupabaseService._extract_error(data)
+            error_code = data.get("error_code", "") if isinstance(data, dict) else ""
             logger.warning(
-                "Supabase sign_in error for email=%s status=%s response=%s",
+                "Supabase sign_in error for email=%s status=%s error_code=%s response=%s",
                 email,
                 response.status_code,
+                error_code,
                 data,
             )
             raise SupabaseAuthError(error_msg, status_code=response.status_code)

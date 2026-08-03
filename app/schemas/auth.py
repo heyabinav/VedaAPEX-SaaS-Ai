@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from pydantic.alias_generators import to_camel
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 
 class AuthBaseModel(BaseModel):
@@ -20,15 +20,16 @@ class UserLogin(AuthBaseModel):
 
 
 class AuthResponseUser(AuthBaseModel):
-    id: int
+    id: Optional[Union[int, str]] = None
     email: str
     full_name: Optional[str] = None
-    referral_code: str
-    role: str
-    plan: str
-    is_pro: bool
+    referral_code: Optional[str] = ""
+    role: str = "user"
+    plan: str = "Free"
+    is_pro: bool = False
     subscription_start: Optional[str] = None
     subscription_end: Optional[str] = None
+
 
 
 class AuthResponseData(AuthBaseModel):
