@@ -15,7 +15,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.user import User
