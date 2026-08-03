@@ -67,11 +67,22 @@ class SupabaseService:
     @staticmethod
     def _extract_error(payload: Any) -> str:
         if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                message = error.get("message") or error.get("description")
+                if message:
+                    return str(message)
+            if payload.get("error_description") and payload.get("error"):
+                return f"{payload.get('error')}: {payload.get('error_description')}"
             for key in ("msg", "message", "error_description", "error"):
                 value = payload.get(key)
                 if value:
                     return str(value)
-        return "Supabase request failed."
+            if "details" in payload:
+                details = payload.get("details")
+                if isinstance(details, (list, dict)):
+                    return str(details)
+        return str(payload) if payload not in (None, "") else "Supabase request failed."
 
     @staticmethod
     def _safe_json(response: httpx.Response) -> Any:
@@ -157,13 +168,18 @@ class SupabaseService:
                     json={"email": email, "password": password},
                 )
         except httpx.HTTPError as exc:
-            logger.error("Supabase sign_in HTTP error: %s", exc)
+            logger.error("Supabase sign_in HTTP error for email=%s: %s", email, exc)
             raise RuntimeError("Supabase auth is unavailable.") from exc
 
         data = SupabaseService._safe_json(response)
         if response.status_code != 200:
             error_msg = SupabaseService._extract_error(data)
-            logger.warning("Supabase sign_in error: %s", error_msg)
+            logger.warning(
+                "Supabase sign_in error for email=%s status=%s response=%s",
+                email,
+                response.status_code,
+                data,
+            )
             raise SupabaseAuthError(error_msg, status_code=response.status_code)
 
         logger.info("Supabase sign_in success for email=%s", email)

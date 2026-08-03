@@ -300,11 +300,12 @@ async def login(body: UserLogin, session: Session = Depends(get_session)):
             )
 
         try:
+            logger.debug("Attempting Supabase login for email=%s", email)
             auth_result = await SupabaseService.sign_in_with_password(email=email, password=password)
             logger.info("Supabase sign_in succeeded for email=%s", email)
         except SupabaseAuthError as exc:
             logger.warning(
-                "Login failed for email=%s: %s (status=%s)",
+                "Login failed for email=%s: Supabase error=%s status=%s",
                 email,
                 exc.message,
                 exc.status_code,
