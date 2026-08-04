@@ -19,8 +19,8 @@ class GoogleConnector(BaseConnector):
     def config(self) -> ConnectorConfig:
         return ConnectorConfig(
             provider="google",
-            client_id=settings.GOOGLE_CLIENT_ID or "",
-            client_secret=settings.GOOGLE_CLIENT_SECRET or "",
+            client_id=(settings.GOOGLE_CLIENT_ID or settings.GOOGLE_OAUTH_CLIENT_ID or ""),
+            client_secret=(settings.GOOGLE_CLIENT_SECRET or settings.GOOGLE_OAUTH_CLIENT_SECRET or ""),
             redirect_uri=settings.GOOGLE_REDIRECT_URI or "",
             auth_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
