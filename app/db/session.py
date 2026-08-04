@@ -83,46 +83,64 @@ def init_db():
 
     logger.info("Running SQLModel.metadata.create_all ...")
     SQLModel.metadata.create_all(engine)
-    _ensure_missing_user_columns()
+    _ensure_missing_schema_columns()
     logger.info("All database tables created/verified successfully.")
 
 
-def _ensure_missing_user_columns() -> None:
-    """Add any missing connector-related user columns for existing databases."""
+def _ensure_missing_schema_columns() -> None:
+    """Dynamically add any missing table columns from SQLModel metadata to existing databases."""
     inspector = inspect(engine)
     try:
-        existing_columns = {col["name"] for col in inspector.get_columns("user")}
+        db_tables = set(inspector.get_table_names())
     except Exception as exc:
-        logger.warning("Unable to inspect user table for missing columns: %s", exc)
+        logger.warning("Unable to inspect database tables for schema verification: %s", exc)
         return
 
-    required_columns = {
-        "canva_access_token": "TEXT",
-        "canva_refresh_token": "TEXT",
-        "canva_token_expires_at": "TIMESTAMP",
-        "figma_access_token": "TEXT",
-        "figma_refresh_token": "TEXT",
-        "figma_token_expires_at": "TIMESTAMP",
-    }
+    is_sqlite = engine.dialect.name == "sqlite"
 
-    missing_columns = {
-        name: data_type
-        for name, data_type in required_columns.items()
-        if name not in existing_columns
-    }
+    for table_name, table in SQLModel.metadata.tables.items():
+        if table_name not in db_tables:
+            continue
 
-    if not missing_columns:
-        return
+        try:
+            existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+        except Exception as exc:
+            logger.warning("Unable to inspect columns for table '%s': %s", table_name, exc)
+            continue
 
-    logger.info("Adding missing user columns: %s", ", ".join(missing_columns.keys()))
-    with engine.begin() as conn:
-        for column_name, column_type in missing_columns.items():
-            conn.execute(
-                text(
-                    f'ALTER TABLE "user" ADD COLUMN {column_name} {column_type}'
+        for col_name, col_obj in table.columns.items():
+            if col_name not in existing_columns:
+                type_str = str(col_obj.type)
+                logger.info(
+                    "Adding missing column to table '%s': %s (%s)",
+                    table_name,
+                    col_name,
+                    type_str,
                 )
-            )
-    logger.info("Missing user columns added successfully.")
+                try:
+                    with engine.begin() as conn:
+                        if is_sqlite:
+                            sql = f'ALTER TABLE "{table_name}" ADD COLUMN "{col_name}" {type_str}'
+                        else:
+                            sql = f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS "{col_name}" {type_str}'
+                        conn.execute(text(sql))
+                    logger.info(
+                        "Successfully added column '%s' to table '%s'.",
+                        col_name,
+                        table_name,
+                    )
+                except Exception as alter_exc:
+                    logger.error(
+                        "Failed to add column '%s' to table '%s': %s",
+                        col_name,
+                        table_name,
+                        alter_exc,
+                    )
+
+
+def _ensure_missing_user_columns() -> None:
+    """Backward-compatible wrapper for schema migration."""
+    _ensure_missing_schema_columns()
 
 
 def get_session():
