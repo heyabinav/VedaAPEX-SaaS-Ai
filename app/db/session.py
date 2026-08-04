@@ -90,31 +90,31 @@ def get_session():
         session = Session(engine)
     except OperationalError as exc:
         logger.exception("Failed to create database session due to operational error")
-        raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable. Please try again later.",
-        ) from exc
+        detail = "Database service unavailable. Please try again later."
+        if settings.APP_ENV != "production":
+            detail = f"Database service unavailable: {exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
     except SQLAlchemyError as exc:
         logger.exception("Database error while opening session", exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail="Database error occurred. Please contact support.",
-        ) from exc
+        detail = "Database error occurred. Please contact support."
+        if settings.APP_ENV != "production":
+            detail = f"Database error occurred: {exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
 
     try:
         yield session
     except OperationalError as exc:
         logger.exception("Database operational error during request handling")
-        raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable. Please try again later.",
-        ) from exc
+        detail = "Database service unavailable. Please try again later."
+        if settings.APP_ENV != "production":
+            detail = f"Database service unavailable: {exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
     except SQLAlchemyError as exc:
         logger.exception("Database error during request handling", exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail="Database error occurred. Please contact support.",
-        ) from exc
+        detail = "Database error occurred. Please contact support."
+        if settings.APP_ENV != "production":
+            detail = f"Database error occurred: {exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
     finally:
         session.close()
 
