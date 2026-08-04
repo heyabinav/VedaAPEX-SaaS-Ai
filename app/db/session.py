@@ -13,6 +13,7 @@ import logging
 import os
 
 from fastapi import HTTPException
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -82,7 +83,46 @@ def init_db():
 
     logger.info("Running SQLModel.metadata.create_all ...")
     SQLModel.metadata.create_all(engine)
+    _ensure_missing_user_columns()
     logger.info("All database tables created/verified successfully.")
+
+
+def _ensure_missing_user_columns() -> None:
+    """Add any missing connector-related user columns for existing databases."""
+    inspector = inspect(engine)
+    try:
+        existing_columns = {col["name"] for col in inspector.get_columns("user")}
+    except Exception as exc:
+        logger.warning("Unable to inspect user table for missing columns: %s", exc)
+        return
+
+    required_columns = {
+        "canva_access_token": "TEXT",
+        "canva_refresh_token": "TEXT",
+        "canva_token_expires_at": "TIMESTAMP",
+        "figma_access_token": "TEXT",
+        "figma_refresh_token": "TEXT",
+        "figma_token_expires_at": "TIMESTAMP",
+    }
+
+    missing_columns = {
+        name: data_type
+        for name, data_type in required_columns.items()
+        if name not in existing_columns
+    }
+
+    if not missing_columns:
+        return
+
+    logger.info("Adding missing user columns: %s", ", ".join(missing_columns.keys()))
+    with engine.begin() as conn:
+        for column_name, column_type in missing_columns.items():
+            conn.execute(
+                text(
+                    f'ALTER TABLE "user" ADD COLUMN {column_name} {column_type}'
+                )
+            )
+    logger.info("Missing user columns added successfully.")
 
 
 def get_session():
