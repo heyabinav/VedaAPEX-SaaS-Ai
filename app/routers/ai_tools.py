@@ -96,6 +96,20 @@ def _daily_limit_error(policy, gen_type: str) -> HTTPException:
     )
 
 
+def _is_true_exhaustion_error(err_msg: str) -> bool:
+    normalized = err_msg.lower()
+    return any(
+        phrase in normalized
+        for phrase in [
+            "all platforms",
+            "all tiers",
+            "all free providers failed",
+            "all premium providers failed",
+            "all providers failed",
+        ]
+    )
+
+
 async def _run_generation_with_policy(
     gen_type: str,
     generation_func,
@@ -191,24 +205,7 @@ async def check_and_log_generation(
         session.commit()
 
         err_msg = str(e).lower()
-        is_exhaustion = any(
-            word in err_msg
-            for word in [
-                "exhausted",
-                "limit",
-                "rate limit",
-                "credits",
-                "unauthorized",
-                "api key",
-                "payment",
-                "429",
-                "401",
-                "402",
-                "403",
-                "quota",
-            ]
-        )
-        if is_exhaustion or "all platforms" in err_msg or "all tiers" in err_msg:
+        if _is_true_exhaustion_error(err_msg):
             ExhaustionService.mark_crashed()
             raise HTTPException(
                 status_code=503,

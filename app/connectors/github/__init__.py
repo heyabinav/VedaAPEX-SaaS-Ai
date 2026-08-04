@@ -18,8 +18,8 @@ class GitHubConnector(BaseConnector):
     def config(self) -> ConnectorConfig:
         return ConnectorConfig(
             provider="github",
-            client_id=settings.GITHUB_CLIENT_ID or "",
-            client_secret=settings.GITHUB_CLIENT_SECRET or "",
+            client_id=(settings.GITHUB_CLIENT_ID or settings.GITHUB_OAUTH_CLIENT_ID or ""),
+            client_secret=(settings.GITHUB_CLIENT_SECRET or settings.GITHUB_OAUTH_CLIENT_SECRET or ""),
             redirect_uri=settings.GITHUB_REDIRECT_URI or "",
             auth_url="https://github.com/login/oauth/authorize",
             token_url="https://github.com/login/oauth/access_token",
