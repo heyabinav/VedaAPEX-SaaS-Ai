@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME_IN_PRODUCTION"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
 
     # Main database URL. Use your Supabase Postgres connection string in production.
     DATABASE_URL: str = "sqlite:///./vedaapex.db"
@@ -546,7 +546,7 @@ class Settings(BaseSettings):
 
     # Session Cookie Configuration
     SESSION_COOKIE_NAME: str = "vedaapex_session"
-    SESSION_COOKIE_MAX_AGE: int = 60 * 60 * 24 * 7  # 7 days
+    SESSION_COOKIE_MAX_AGE: int = 60 * 60 * 24 * 30  # 30 days
     SESSION_COOKIE_SECURE: bool = True
     SESSION_COOKIE_SAMESITE: str = "lax"
 

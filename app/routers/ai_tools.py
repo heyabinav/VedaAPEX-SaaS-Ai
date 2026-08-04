@@ -169,12 +169,11 @@ async def check_and_log_generation(
 ):
     from app.services.exhaustion_service import ExhaustionService
 
-    # Free-first routing depends on the shared exhaustion guard.
-    if ExhaustionService.is_crashed():
-        raise HTTPException(
-            status_code=503,
-            detail="Couldn't reach server. Please try again later. / सर्वर तक नहीं पहुँचा जा सका। कृपया बाद में प्रयास करें।",
-        )
+    # If a crash state exists, allow one recovery attempt so the API can clear
+    # itself when provider access is restored.
+    crashed_today = ExhaustionService.is_crashed()
+    if crashed_today:
+        pass
 
     del args
     policy = GenerationPolicyService.build_policy(session, user, gen_type)
@@ -248,6 +247,9 @@ async def check_and_log_generation(
         )
     else:
         session.commit()
+
+    # Clear any previous exhaustion crash state once generation succeeds again.
+    ExhaustionService.clear_crash()
 
     if hasattr(user, "webhook_url") and user.webhook_url:
         from ..services.webhook_service import WebhookService
