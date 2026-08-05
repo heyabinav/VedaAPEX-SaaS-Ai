@@ -1,4 +1,4 @@
-﻿"""Search history endpoints."""
+"""Search history endpoints."""
 
 from __future__ import annotations
 

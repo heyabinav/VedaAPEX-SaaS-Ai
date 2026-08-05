@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlmodel import Session, select
 from app.db.session import get_session
@@ -27,7 +29,7 @@ async def redeem_promo(
         raise HTTPException(status_code=404, detail="Invalid promo code.")
     if not promo.is_active:
         raise HTTPException(status_code=400, detail="Promo code inactive.")
-    if promo.expires_at and promo.expires_at < datetime.utcnow():
+    if promo.expires_at and promo.expires_at < utcnow():
         raise HTTPException(status_code=400, detail="Promo code expired.")
     if promo.current_uses >= promo.max_uses:
         raise HTTPException(status_code=400, detail="Promo code usage limit reached.")

@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from sqlmodel import Session, select
 from datetime import datetime
 from typing import Dict, Any
@@ -9,7 +11,7 @@ class UsageTrackingService:
     @staticmethod
     def get_daily_usage(session: Session, user_id: int, tool_type: str) -> APIUsage:
         """Get or create the daily usage record for a tool."""
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = utcnow().strftime("%Y-%m-%d")
 
         usage = session.exec(
             select(APIUsage).where(
@@ -56,14 +58,14 @@ class UsageTrackingService:
         """Increment the usage count for a tool."""
         usage = UsageTrackingService.get_daily_usage(session, user_id, tool_type)
         usage.count += 1
-        usage.last_requested_at = datetime.utcnow()
+        usage.last_requested_at = utcnow()
         session.add(usage)
         session.commit()
 
     @staticmethod
     def get_usage_summary(session: Session, user_id: int) -> Dict[str, Any]:
         """Get a summary of daily usage vs limits for a user."""
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = utcnow().strftime("%Y-%m-%d")
         usages = session.exec(
             select(APIUsage).where(APIUsage.user_id == user_id, APIUsage.date == today)
         ).all()

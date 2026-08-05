@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from app.models.token import DailyReward
@@ -10,7 +12,7 @@ class DailyRewardService:
 
     @staticmethod
     def claim_daily_reward(session: Session, user_id: int, ip_address: str = None) -> dict:
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
 
         # Check if already claimed today
@@ -47,7 +49,7 @@ class DailyRewardService:
 
         # Create reward record
         reward = DailyReward(
-            user_id=user_id, amount=credits, streak=streak, claimed_at=datetime.utcnow()
+            user_id=user_id, amount=credits, streak=streak, claimed_at=utcnow()
         )
         session.add(reward)
         session.commit()
@@ -73,7 +75,7 @@ class DailyRewardService:
 
     @staticmethod
     def get_streak_info(session: Session, user_id: int) -> dict:
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
 
         latest = session.exec(

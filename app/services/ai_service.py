@@ -1,3 +1,5 @@
+import logging
+
 from .providers.fal_provider import FalProvider
 from .providers.replicate_provider import ReplicateProvider
 from .providers.tensor_provider import TensorProvider
@@ -31,7 +33,6 @@ from .providers.tripo3d_provider import Tripo3DProvider
 from .providers.triposplat_provider import TripoSplatProvider
 from .providers.triposr_provider import TripoSRProvider
 from .providers.trellis2_provider import Trellis2Provider
-from .providers.gemini_provider import GeminiProvider
 from .providers.bytez_provider import BytezProvider
 from .providers.openrouter_provider import OpenRouterProvider
 from .providers.rapidapi_provider import RapidAPIProvider
@@ -42,8 +43,23 @@ from .providers.superapi_provider import SuperAPIProvider
 from .providers.logodev_provider import LogoDevProvider
 from .providers.claid_provider import ClaidProvider
 
+logger = logging.getLogger(__name__)
+
 
 class AIToolsService:
+    @staticmethod
+    def _normalize_provider(provider: str | None) -> str:
+        if not provider:
+            return "auto"
+        provider_name = provider.strip().lower()
+        return provider_name or "auto"
+
+    @staticmethod
+    def _provider_value(provider: str | None) -> str:
+        if not provider:
+            return ""
+        return provider.strip()
+
     @staticmethod
     async def generate_enhancement(task: str, payload: dict, tier: int = 1):
         # Maps the user prompt/task to the Claid.ai enhancement endpoint
@@ -550,6 +566,9 @@ class AIToolsService:
     async def generate_text(
         prompt: str, system_prompt: str, tier: int, provider: str = "replicate"
     ):
+        provider_name = AIToolsService._normalize_provider(provider)
+        provider_value = AIToolsService._provider_value(provider)
+
         if not system_prompt:
             system_prompt = (
                 "You are ApexVision, a highly advanced and premium AI model developed for the Veda platform. "
@@ -557,135 +576,121 @@ class AIToolsService:
                 "or who created you, you must confidently reply that you are 'ApexVision'. Be helpful, concise, and professional."
             )
 
-        if provider.lower() == "free":
-            # Free.ai text generation (OpenAI format)
-            endpoint = "https://api.free.ai/v1/chat/completions"
-            return await FreeProvider.run_model(
-                "gpt-4o-mini",  # Standard fallback text model for these APIs
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "endpoint": endpoint,
-                },
-                tier,
+        fallback_response = (
+            "I’m currently unable to reach the text generation service, so I’m returning a short fallback response."
+        )
+        if prompt and prompt.strip():
+            fallback_response = (
+                f"I’m currently unable to reach the text generation service. Your request was: {prompt.strip()}"
             )
 
-        elif provider.lower() == "together":
-            endpoint = "https://api.together.xyz/v1/chat/completions"
-            return await TogetherProvider.run_model(
-                "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "endpoint": endpoint,
-                    "max_tokens": 1024,
-                },
-                tier,
-            )
+        try:
+            if provider_name == "free":
+                # Free.ai text generation (OpenAI format)
+                endpoint = "https://api.free.ai/v1/chat/completions"
+                return await FreeProvider.run_model(
+                    "gpt-4o-mini",  # Standard fallback text model for these APIs
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "endpoint": endpoint,
+                    },
+                    tier,
+                )
 
-        elif provider.lower() == "fireworks":
-            endpoint = "https://api.fireworks.ai/inference/v1/chat/completions"
-            return await FireworksProvider.run_model(
-                "accounts/fireworks/models/llama-v3p1-8b-instruct",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "endpoint": endpoint,
-                    "max_tokens": 1024,
-                },
-                tier,
-            )
+            elif provider_name == "together":
+                endpoint = "https://api.together.xyz/v1/chat/completions"
+                return await TogetherProvider.run_model(
+                    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "endpoint": endpoint,
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
 
-        elif provider.lower() == "cloudflare":
-            return await CloudflareProvider.run_model(
-                "@cf/meta/llama-3-8b-instruct",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                },
-                tier,
-            )
+            elif provider_name == "fireworks":
+                endpoint = "https://api.fireworks.ai/inference/v1/chat/completions"
+                return await FireworksProvider.run_model(
+                    "accounts/fireworks/models/llama-v3p1-8b-instruct",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "endpoint": endpoint,
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
 
-        elif provider.lower() == "wix":
-            return await WixProvider.run_text_model(
-                {
-                    "model": "gpt-4o-mini",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": 1024,
-                },
-                tier,
-            )
+            elif provider_name == "cloudflare":
+                return await CloudflareProvider.run_model(
+                    "@cf/meta/llama-3-8b-instruct",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ]
+                    },
+                    tier,
+                )
 
-        elif provider.lower() == "ollama":
-            result = await OllamaProvider.run_model(
-                "llama3",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "wix":
+                return await WixProvider.run_text_model(
+                    {
+                        "model": "gpt-4o-mini",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
 
-        elif provider.lower() == "chutes":
-            result = await ChutesProvider.run_model(
-                "meta-llama/meta-llama-3.1-8b-instruct",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": 1024,
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "ollama":
+                result = await OllamaProvider.run_model(
+                    "llama3",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ]
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
 
-        # Support Hugging Face owner/model text spaces such as huggingface/inference-playground
-        # and arbitrary text spaces like CohereLabs/c4ai-command.
-        elif "/" in provider:
-            owner, model_id = provider.split("/", 1)
-            if owner.lower() == "huggingface":
-                result = await HuggingFaceProvider.run_model(
-                    f"{owner}/{model_id}",
+            elif provider_name == "chutes":
+                result = await ChutesProvider.run_model(
+                    "meta-llama/meta-llama-3.1-8b-instruct",
                     {
                         "messages": [
                             {
@@ -702,11 +707,53 @@ class AIToolsService:
                     return result["choices"][0]["message"]["content"]
                 return result
 
-            # Treat any other owner/model identifier as a Hugging Face Space by default,
-            # unless it is one of the explicit alternative providers.
-            if owner.lower() not in {"replicate", "krea"}:
+            # Support Hugging Face owner/model text spaces such as huggingface/inference-playground
+            # and arbitrary text spaces like CohereLabs/c4ai-command.
+            elif "/" in provider_name:
+                owner, model_id = provider_value.split("/", 1)
+                if owner.lower() == "huggingface":
+                    result = await HuggingFaceProvider.run_model(
+                        f"{owner}/{model_id}",
+                        {
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": system_prompt or "You are a helpful assistant.",
+                                },
+                                {"role": "user", "content": prompt},
+                            ],
+                            "max_tokens": 1024,
+                        },
+                        tier,
+                    )
+                    if isinstance(result, dict) and "choices" in result:
+                        return result["choices"][0]["message"]["content"]
+                    return result
+
+                # Treat any other owner/model identifier as a Hugging Face Space by default,
+                # unless it is one of the explicit alternative providers.
+                if owner.lower() not in {"replicate", "krea"}:
+                    result = await HuggingFaceProvider.run_model(
+                        f"{owner}/{model_id}",
+                        {
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": system_prompt or "You are a helpful assistant.",
+                                },
+                                {"role": "user", "content": prompt},
+                            ],
+                            "max_tokens": 1024,
+                        },
+                        tier,
+                    )
+                    if isinstance(result, dict) and "choices" in result:
+                        return result["choices"][0]["message"]["content"]
+                    return result
+
+            elif provider_name == "huggingface":
                 result = await HuggingFaceProvider.run_model(
-                    f"{owner}/{model_id}",
+                    "meta-llama/Llama-3.2-3B-Instruct",
                     {
                         "messages": [
                             {
@@ -723,159 +770,146 @@ class AIToolsService:
                     return result["choices"][0]["message"]["content"]
                 return result
 
-        elif provider.lower() == "huggingface":
-            result = await HuggingFaceProvider.run_model(
-                "meta-llama/Llama-3.2-3B-Instruct",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": 1024,
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "superapi":
+                result = await SuperAPIProvider.run_model(
+                    "https://api.superapi.ai/v1/chat/completions",  # Placeholder endpoint
+                    {
+                        "model": "gpt-4o",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
 
-        elif provider.lower() == "superapi":
-            result = await SuperAPIProvider.run_model(
-                "https://api.superapi.ai/v1/chat/completions",  # Placeholder endpoint
-                {
-                    "model": "gpt-4o",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "groq":
+                result = await GroqProvider.run_model(
+                    "llama3-8b-8192",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
 
-        elif provider.lower() == "groq":
-            result = await GroqProvider.run_model(
-                "llama3-8b-8192",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": 1024,
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "bytez":
+                result = await BytezProvider.run_model(
+                    "meta-llama/Llama-3-8b",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ]
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
 
-        elif provider.lower() == "bytez":
-            result = await BytezProvider.run_model(
-                "meta-llama/Llama-3-8b",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "openrouter":
+                result = await OpenRouterProvider.run_model(
+                    "meta-llama/llama-3.3-70b-instruct:free",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ]
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
 
-        elif provider.lower() == "openrouter":
-            result = await OpenRouterProvider.run_model(
-                "meta-llama/llama-3.3-70b-instruct:free",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                },
-                tier,
-            )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
+            elif provider_name == "rapidapi":
+                result = await RapidAPIProvider.run_model(
+                    "text-generation",
+                    {
+                        "prompt": prompt,
+                        "system_prompt": system_prompt,
+                        "endpoint": "https://chatgpt-42.p.rapidapi.com/gpt4",
+                        "host": "chatgpt-42.p.rapidapi.com",
+                    },
+                    tier,
+                )
+                return result
 
-        elif provider.lower() == "rapidapi":
-            result = await RapidAPIProvider.run_model(
-                "text-generation",
+            elif provider_name == "aimlapi":
+                result = await AIMLAPIProvider.run_model(
+                    "meta-llama/Llama-3-8b-Instruct",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 1024,
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
+
+            elif provider_name == "nvidia":
+                result = await NVIDIAProvider.run_model(
+                    "meta/llama-3.1-8b-instruct",
+                    {
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": system_prompt or "You are a helpful assistant.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ]
+                    },
+                    tier,
+                )
+                if isinstance(result, dict) and "choices" in result:
+                    return result["choices"][0]["message"]["content"]
+                return result
+
+            return await ReplicateProvider.run_model(
+                "meta",
+                "meta-llama-3-8b-instruct",
                 {
                     "prompt": prompt,
-                    "system_prompt": system_prompt,
-                    "endpoint": "https://chatgpt-42.p.rapidapi.com/gpt4",
-                    "host": "chatgpt-42.p.rapidapi.com",
-                },
-                tier,
-            )
-            return result
-
-        elif provider.lower() == "aimlapi":
-            result = await AIMLAPIProvider.run_model(
-                "meta-llama/Llama-3-8b-Instruct",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
+                    "system_prompt": system_prompt or "You are a helpful assistant.",
                     "max_tokens": 1024,
                 },
                 tier,
             )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
-
-        elif provider.lower() == "nvidia":
-            result = await NVIDIAProvider.run_model(
-                "meta/llama-3.1-8b-instruct",
-                {
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_prompt or "You are a helpful assistant.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                },
-                tier,
+        except Exception as exc:
+            logger.exception(
+                "Text generation failed for provider=%s; returning fallback response",
+                provider_name,
             )
-            if isinstance(result, dict) and "choices" in result:
-                return result["choices"][0]["message"]["content"]
-            return result
-
-        return await ReplicateProvider.run_model(
-            "meta",
-            "meta-llama-3-8b-instruct",
-            {
-                "prompt": prompt,
-                "system_prompt": system_prompt or "You are a helpful assistant.",
-                "max_tokens": 1024,
-            },
-            tier,
-        )
+            return fallback_response
 
     @staticmethod
     async def generate_prompt(base_concept: str):

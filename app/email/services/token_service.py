@@ -1,5 +1,7 @@
 """Token generation and verification service."""
 
+from utils.time import utcnow
+
 import logging
 import secrets
 import hashlib
@@ -32,7 +34,7 @@ class TokenService:
         Returns:
             Datetime when token expires
         """
-        return datetime.utcnow() + EmailConfig.VERIFICATION_TOKEN_EXPIRY
+        return utcnow() + EmailConfig.VERIFICATION_TOKEN_EXPIRY
 
     @staticmethod
     def hash_token(token: str) -> str:
@@ -58,7 +60,7 @@ class TokenService:
         Returns:
             True if token is expired, False otherwise
         """
-        return datetime.utcnow() > expiry_time
+        return utcnow() > expiry_time
 
     @staticmethod
     def generate_session_token(user_id: int, email: str) -> str:
@@ -72,7 +74,7 @@ class TokenService:
         Returns:
             Session token
         """
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = utcnow().isoformat()
         data = f"{user_id}:{email}:{timestamp}:{secrets.token_hex(16)}"
         token = hashlib.sha256(data.encode()).hexdigest()
         logger.debug(f"✅ Session token generated for user {user_id}")

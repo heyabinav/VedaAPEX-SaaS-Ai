@@ -1,5 +1,7 @@
 """Database models for email verification."""
 
+from utils.time import utcnow
+
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Boolean, Integer, create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -62,7 +64,7 @@ class EmailUser(Base):
         """Check if verification token is still valid."""
         if not self.verification_token_expires:
             return False
-        return datetime.utcnow() < self.verification_token_expires
+        return utcnow() < self.verification_token_expires
 
     def to_dict(self) -> dict:
         """Convert to dictionary (excluding sensitive data)."""

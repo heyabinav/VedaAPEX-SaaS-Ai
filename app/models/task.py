@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from utils.time import utcnow
+
 from typing import Optional
 from sqlmodel import SQLModel, Field
 from datetime import datetime
-
 
 class Task(SQLModel, table=True):
     __tablename__ = "media_task"
@@ -19,5 +20,5 @@ class Task(SQLModel, table=True):
     options_json: str = Field(default="{}")
     output_path: Optional[str] = None
     error_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

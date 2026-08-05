@@ -12,9 +12,13 @@ import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi_mcp import FastApiMCP
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
+
+try:
+    from fastapi_mcp import FastApiMCP
+except ImportError:  # pragma: no cover
+    FastApiMCP = None
 
 from config import config
 from middleware.logging import LoggingMiddleware
@@ -81,6 +85,44 @@ LOGGING_CONFIG = {
 
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
+
+
+class _FallbackFastApiMCP:
+    """Minimal MCP compatibility layer when fastapi_mcp is unavailable."""
+
+    def __init__(
+        self,
+        app: FastAPI,
+        name: str,
+        description: str = "",
+        include_tags: Optional[list[str]] = None,
+        headers: Optional[list[str]] = None,
+    ):
+        self.app = app
+        self.name = name
+        self.description = description
+        self.include_tags = include_tags or []
+        self.headers = headers or []
+
+    def _payload(self, transport: str) -> dict[str, Any]:
+        return {
+            "success": False,
+            "message": "MCP support is disabled because fastapi_mcp is not installed.",
+            "transport": transport,
+            "app": self.name,
+            "tools": list(getattr(self.app.state, "mcp_tool_names", [])),
+            "description": self.description,
+        }
+
+    def mount_http(self, app: FastAPI, path: str):
+        @app.api_route(path, methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+        async def _mcp_http():
+            return JSONResponse(content=self._payload("http"))
+
+    def mount_sse(self, app: FastAPI, path: str):
+        @app.get(path, include_in_schema=False)
+        async def _mcp_sse():
+            return JSONResponse(content=self._payload("sse"))
 
 
 # ============================================================================
@@ -382,7 +424,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"Version: {config.APP_VERSION}")
     logger.info(f"Environment: {config.APP_ENV}")
     logger.info(f"Cache: {config.CACHE_TYPE}")
-    logger.info(f"Rate limit: {config.RATE_LIMIT_PER_MINUTE} req/min")
+    logger.info(
+        f"Rate limit: {config.RATE_LIMIT_PER_SECOND} req/{config.RATE_LIMIT_WINDOW_SECONDS}s"
+    )
 
     yield
 
@@ -427,8 +471,8 @@ app.add_middleware(
 # 3. Rate Limiting
 app.add_middleware(
     RateLimitMiddleware,
-    max_requests=config.RATE_LIMIT_PER_MINUTE,
-    window_seconds=60,
+    max_requests=config.RATE_LIMIT_PER_SECOND,
+    window_seconds=config.RATE_LIMIT_WINDOW_SECONDS,
 )
 
 # 4. Logging
@@ -540,11 +584,12 @@ app.include_router(search.router)
 app.include_router(health.router)
 
 
-# ============================================================================
+# ============================================================================ 
 # MCP SERVER INTEGRATION
 # ============================================================================
 # Keep the existing API routes intact and expose a thin MCP layer on top.
-mcp = FastApiMCP(
+_MCPClass = FastApiMCP or _FallbackFastApiMCP
+mcp = _MCPClass(
     app,
     name=config.APP_NAME,
     description=(

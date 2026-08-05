@@ -1,23 +1,14 @@
 """Response schemas."""
 
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SearchResult(BaseModel):
     """Single search result."""
 
-    title: str = Field(..., description="Result title")
-    description: Optional[str] = Field(None, description="Description")
-    media_type: str = Field(..., description="image or video")
-    provider: str = Field(..., description="Provider name")
-    image_url: Optional[str] = Field(None, description="Image URL")
-    video_url: Optional[str] = Field(None, description="Video URL")
-    thumbnail_url: Optional[str] = Field(None, description="Thumbnail URL")
-    source_url: str = Field(..., description="Source page URL")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "title": "Cancer Cell under Microscope",
                 "description": "High resolution cancer cell image",
@@ -28,7 +19,16 @@ class SearchResult(BaseModel):
                 "source_url": "https://commons.wikimedia.org/...",
             }
         }
+    )
 
+    title: str = Field(..., description="Result title")
+    description: Optional[str] = Field(None, description="Description")
+    media_type: str = Field(..., description="image or video")
+    provider: str = Field(..., description="Provider name")
+    image_url: Optional[str] = Field(None, description="Image URL")
+    video_url: Optional[str] = Field(None, description="Video URL")
+    thumbnail_url: Optional[str] = Field(None, description="Thumbnail URL")
+    source_url: str = Field(..., description="Source page URL")
 
 class Pagination(BaseModel):
     """Pagination info."""
@@ -41,17 +41,8 @@ class Pagination(BaseModel):
 class UnifiedSearchResponse(BaseModel):
     """Unified search response."""
 
-    success: bool = Field(..., description="Success status")
-    query: str = Field(..., description="Search query")
-    selected_provider: str = Field(..., description="Primary provider used")
-    fallback_providers: List[str] = Field(..., description="Fallback providers")
-    results: List[SearchResult] = Field(..., description="Search results")
-    pagination: Pagination = Field(..., description="Pagination info")
-    timestamp: str = Field(..., description="Response timestamp")
-    cached: bool = Field(default=False, description="From cache")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "query": "cancer cell",
@@ -63,21 +54,22 @@ class UnifiedSearchResponse(BaseModel):
                 "cached": False,
             }
         }
+    )
 
+    success: bool = Field(..., description="Success status")
+    query: str = Field(..., description="Search query")
+    selected_provider: str = Field(..., description="Primary provider used")
+    fallback_providers: List[str] = Field(..., description="Fallback providers")
+    results: List[SearchResult] = Field(..., description="Search results")
+    pagination: Pagination = Field(..., description="Pagination info")
+    timestamp: str = Field(..., description="Response timestamp")
+    cached: bool = Field(default=False, description="From cache")
 
 class BrowserSearchResponse(BaseModel):
     """Browser search response powered by SuperAI."""
 
-    success: bool = Field(..., description="Success status")
-    query: str = Field(..., description="Search query")
-    search_type: str = Field(..., description="Search scope such as website, any, or news")
-    provider: str = Field(..., description="Provider used")
-    answer: str = Field(..., description="AI-generated browser search result")
-    raw_response: Optional[dict] = Field(None, description="Raw provider response")
-    timestamp: str = Field(..., description="Response timestamp")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "query": "best python tutorials",
@@ -88,7 +80,15 @@ class BrowserSearchResponse(BaseModel):
                 "timestamp": "2024-01-15T10:30:00",
             }
         }
+    )
 
+    success: bool = Field(..., description="Success status")
+    query: str = Field(..., description="Search query")
+    search_type: str = Field(..., description="Search scope such as website, any, or news")
+    provider: str = Field(..., description="Provider used")
+    answer: str = Field(..., description="AI-generated browser search result")
+    raw_response: Optional[dict] = Field(None, description="Raw provider response")
+    timestamp: str = Field(..., description="Response timestamp")
 
 class HealthResponse(BaseModel):
     """Health check response."""

@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from typing import Any
@@ -198,7 +200,7 @@ async def check_and_log_generation(
                 cost=0,
                 status="FAILED",
                 provider=kwargs.get("provider"),
-                created_at=datetime.utcnow(),
+                created_at=utcnow(),
             )
         )
         session.commit()
@@ -219,7 +221,7 @@ async def check_and_log_generation(
         type=gen_type,
         prompt=log_prompt,
         output_url=output_url,
-        created_at=datetime.utcnow(),
+        created_at=utcnow(),
     )
     session.add(generation_log)
 
@@ -233,7 +235,7 @@ async def check_and_log_generation(
             status="SUCCESS",
             provider=routed.provider,
             model_used=routed.route_mode,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
     )
 

@@ -24,14 +24,6 @@ async def process_generation(
     user: User = Depends(get_current_user_auth),
     session: Session = Depends(get_session),
 ):
-    from app.services.exhaustion_service import ExhaustionService
-
-    if ExhaustionService.is_crashed():
-        raise HTTPException(
-            status_code=503,
-            detail="Couldn't reach server. Please try again later. / सर्वर तक नहीं पहुँचा जा सका। कृपया बाद में प्रयास करें।",
-        )
-
     gen_key = (
         gen_type.upper()
         .replace("-", "_")

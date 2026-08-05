@@ -13,6 +13,8 @@ Key fixes:
     (race‑condition / duplicate email)
 """
 
+from utils.time import utcnow
+
 import logging
 import uuid
 from datetime import datetime
@@ -253,7 +255,7 @@ class SupabaseService:
                 referral_code=referral_code,
                 referred_by=referral_code_input,
                 role="USER",
-                last_login_at=datetime.utcnow(),
+                last_login_at=utcnow(),
             )
             session.add(user)
             try:
@@ -284,7 +286,7 @@ class SupabaseService:
         else:
             if full_name and user.full_name != full_name:
                 user.full_name = full_name
-            user.last_login_at = datetime.utcnow()
+            user.last_login_at = utcnow()
             session.add(user)
             session.commit()
             session.refresh(user)

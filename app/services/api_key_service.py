@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import secrets
 import hashlib
 from datetime import datetime
@@ -54,7 +56,7 @@ class APIKeyService:
         if not db_key:
             return None
 
-        if db_key.expires_at and db_key.expires_at < datetime.utcnow():
+        if db_key.expires_at and db_key.expires_at < utcnow():
             db_key.is_active = False
             session.add(db_key)
             session.commit()

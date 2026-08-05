@@ -1,4 +1,4 @@
-﻿"""Database connection and session management."""
+"""Database connection and session management."""
 
 import logging
 from sqlalchemy import create_engine

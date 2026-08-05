@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     MAX_PAGE_SIZE: int = 100
 
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_PER_SECOND: int = 40
+    RATE_LIMIT_WINDOW_SECONDS: int = 1
 
     # Query
     MIN_QUERY_LENGTH: int = 2

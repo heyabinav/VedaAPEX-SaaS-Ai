@@ -1,4 +1,4 @@
-﻿"""Schemas for saving and listing search history."""
+"""Schemas for saving and listing search history."""
 
 from __future__ import annotations
 

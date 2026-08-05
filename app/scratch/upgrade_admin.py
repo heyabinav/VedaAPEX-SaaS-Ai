@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import logging
 from datetime import datetime, timedelta
 from sqlmodel import Session, select, create_engine
@@ -26,8 +28,8 @@ def upgrade_user(email: str):
         user.plan = "ultra"
         user.is_pro = True
         # Set subscription end to 100 years from now
-        user.subscription_start = datetime.utcnow()
-        user.subscription_end = datetime.utcnow() + timedelta(days=36500)
+        user.subscription_start = utcnow()
+        user.subscription_end = utcnow() + timedelta(days=36500)
 
         session.add(user)
         logger.info("Updated User model fields.")
@@ -60,7 +62,7 @@ def upgrade_user(email: str):
                 user_id=user.id,
                 plan_id=ultra_plan.id,
                 status="active",
-                current_period_start=datetime.utcnow(),
+                current_period_start=utcnow(),
                 current_period_end=user.subscription_end,
             )
         else:

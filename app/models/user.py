@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from typing import TYPE_CHECKING, Any, Optional, List
 from sqlalchemy.orm import relationship
 from sqlmodel import SQLModel, Field, Relationship
@@ -34,7 +36,7 @@ class User(UserBase, table=True):
     api_key: Optional[str] = Field(default=None, unique=True, index=True)
     webhook_url: Optional[str] = None
     last_login_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
     plan: str = Field(default="free")
     is_pro: bool = Field(default=False)
     subscription_start: Optional[datetime] = Field(default=None)
@@ -104,7 +106,7 @@ class Generation(SQLModel, table=True):
     type: str  # text, image, video, ppt, etc.
     prompt: str
     output_url: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="generations")

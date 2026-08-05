@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from utils.time import utcnow
+
 import ipaddress
 import json
 import logging
@@ -34,11 +36,9 @@ logger = logging.getLogger("services.connector_management")
 ALLOWED_AUTH_TYPES = {"none", "api_key", "bearer", "oauth2"}
 ALLOWED_TRANSPORTS = {"streamable-http", "sse", "http"}
 
-
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug or "connector"
-
 
 def _unique_slug(session: Session, base_slug: str, current_id: Optional[int] = None) -> str:
     slug = base_slug
@@ -50,7 +50,6 @@ def _unique_slug(session: Session, base_slug: str, current_id: Optional[int] = N
         suffix += 1
         slug = f"{base_slug}-{suffix}"
 
-
 def _parse_json_field(value: str, default: Any) -> Any:
     if not value:
         return default
@@ -59,12 +58,10 @@ def _parse_json_field(value: str, default: Any) -> Any:
     except json.JSONDecodeError:
         return default
 
-
 def _as_json(value: Any) -> str:
     if isinstance(value, str):
         return value
     return json.dumps(value or {}, ensure_ascii=True, separators=(",", ":"))
-
 
 def _public_auth_preview(auth_type: str, auth_config: dict[str, Any]) -> dict[str, Any]:
     if not auth_config:
@@ -87,7 +84,6 @@ def _public_auth_preview(auth_type: str, auth_config: dict[str, Any]) -> dict[st
         preview.setdefault("grant_type", "authorization_code")
 
     return preview
-
 
 def _normalize_server_url(server_url: str) -> str:
     parsed = urlparse(server_url.strip())
@@ -112,7 +108,6 @@ def _normalize_server_url(server_url: str) -> str:
 
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}".rstrip("/")
 
-
 def _validate_auth_config(auth_type: str, auth_config: dict[str, Any]) -> None:
     if auth_type not in ALLOWED_AUTH_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported auth_type: {auth_type}")
@@ -134,7 +129,6 @@ def _validate_auth_config(auth_type: str, auth_config: dict[str, Any]) -> None:
                 status_code=400,
                 detail=f"oauth2 auth requires: {', '.join(missing)}",
             )
-
 
 def _connector_to_response(connector: ManagedConnector) -> ManagedConnectorResponse:
     auth_config = decrypt_json(connector.auth_config_encrypted)
@@ -167,7 +161,6 @@ def _connector_to_response(connector: ManagedConnector) -> ManagedConnectorRespo
         last_validation_http_status=connector.last_validation_http_status,
         tool_count=connector.tool_count,
     )
-
 
 class ConnectorManagementService:
     @staticmethod
@@ -207,8 +200,8 @@ class ConnectorManagementService:
             discovered_tools_json="[]",
             is_active=body.is_active,
             created_by_user_id=user.id,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utcnow(),
+            updated_at=utcnow(),
             validation_status="pending",
         )
         session.add(connector)
@@ -253,7 +246,7 @@ class ConnectorManagementService:
         if body.is_active is not None:
             connector.is_active = body.is_active
 
-        connector.updated_at = datetime.utcnow()
+        connector.updated_at = utcnow()
         session.add(connector)
         session.commit()
         session.refresh(connector)
@@ -380,14 +373,14 @@ class ConnectorManagementService:
             error = str(exc.detail)
             logger.warning("Connector validation failed for connector_id=%s: %s", connector_id, error)
         finally:
-            connector.last_validated_at = datetime.utcnow()
+            connector.last_validated_at = utcnow()
             connector.last_validation_http_status = http_status
             connector.validation_error = error
             connector.validation_status = validation_status if valid else "failed"
             connector.tool_count = len(tools)
             if refresh_tools:
                 connector.discovered_tools_json = json.dumps(tools, ensure_ascii=True, separators=(",", ":"))
-            connector.updated_at = datetime.utcnow()
+            connector.updated_at = utcnow()
             session.add(connector)
             session.commit()
             session.refresh(connector)
@@ -403,7 +396,7 @@ class ConnectorManagementService:
             tool_count=len(tools),
             warnings=warnings,
             error=error,
-            validated_at=connector.last_validated_at or datetime.utcnow(),
+            validated_at=connector.last_validated_at or utcnow(),
         )
 
     @staticmethod
@@ -489,14 +482,14 @@ class ConnectorManagementService:
             connector.validation_error = error
             logger.warning("MCP validation failed for connector_id=%s: %s", connector_id, error)
         finally:
-            connector.last_validated_at = datetime.utcnow()
+            connector.last_validated_at = utcnow()
             connector.last_validation_http_status = http_status
             connector.tool_count = len(tools)
             if refresh_tools:
                 connector.discovered_tools_json = json.dumps(
                     tools, ensure_ascii=True, separators=(",", ":")
                 )
-            connector.updated_at = datetime.utcnow()
+            connector.updated_at = utcnow()
             session.add(connector)
             session.commit()
             session.refresh(connector)
@@ -512,7 +505,7 @@ class ConnectorManagementService:
             tool_count=len(tools),
             warnings=warnings,
             error=error,
-            validated_at=connector.last_validated_at or datetime.utcnow(),
+            validated_at=connector.last_validated_at or utcnow(),
         )
 
     @staticmethod

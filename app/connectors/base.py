@@ -1,5 +1,7 @@
 """Base connector class - all providers extend this."""
 
+from utils.time import utcnow
+
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
@@ -72,7 +74,7 @@ class BaseConnector(ABC):
         return True
 
     def _parse_token_response(self, payload: dict) -> OAuthTokens:
-        now = datetime.utcnow()
+        now = utcnow()
         expires_in = payload.get("expires_in")
         expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
         return OAuthTokens(

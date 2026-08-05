@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import json
 from datetime import datetime
 from sqlmodel import Session, select
@@ -33,7 +35,7 @@ class TokenService:
         new_balance = wallet.balance - amount
         wallet.balance = new_balance
         wallet.lifetime_spent += amount
-        wallet.updated_at = datetime.utcnow()
+        wallet.updated_at = utcnow()
         session.add(wallet)
 
         tx = TokenTransaction(
@@ -43,7 +45,7 @@ class TokenService:
             description=description,
             balance_after=new_balance,
             ip_address=ip_address,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         session.add(tx)
         session.commit()
@@ -67,7 +69,7 @@ class TokenService:
         new_balance = wallet.balance + amount
         wallet.balance = new_balance
         wallet.lifetime_earned += amount
-        wallet.updated_at = datetime.utcnow()
+        wallet.updated_at = utcnow()
         session.add(wallet)
 
         tx = TokenTransaction(
@@ -78,7 +80,7 @@ class TokenService:
             balance_after=new_balance,
             ip_address=ip_address,
             metadata_json=json.dumps(metadata) if metadata else None,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         session.add(tx)
         session.commit()
@@ -93,7 +95,7 @@ class TokenService:
             user_id=user_id,
             balance=bonus,
             lifetime_earned=bonus,
-            updated_at=datetime.utcnow(),
+            updated_at=utcnow(),
         )
         session.add(wallet)
 
@@ -103,7 +105,7 @@ class TokenService:
             type="SIGNUP_BONUS",
             description=f"Welcome bonus: {bonus} credits",
             balance_after=bonus,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
         )
         session.add(tx)
         session.commit()

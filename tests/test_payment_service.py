@@ -1,4 +1,6 @@
-﻿import asyncio
+from utils.time import utcnow
+
+import asyncio
 import hashlib
 import hmac
 import uuid
@@ -148,8 +150,8 @@ def test_verify_checkout_payment_activates_subscription(monkeypatch, razorpay_se
         currency='INR',
         purpose='VEDAAPEX_SUBSCRIPTION',
         status=PaymentOrderStatus.CREATED,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=utcnow(),
+        updated_at=utcnow(),
     )
     razorpay_session.add(order)
     razorpay_session.commit()
@@ -213,8 +215,8 @@ def test_verify_checkout_payment_rejects_invalid_signature(monkeypatch, razorpay
         currency='INR',
         purpose='VEDAAPEX_SUBSCRIPTION',
         status=PaymentOrderStatus.CREATED,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=utcnow(),
+        updated_at=utcnow(),
     )
     razorpay_session.add(order)
     razorpay_session.commit()
@@ -252,7 +254,7 @@ def test_legacy_subscription_plan_name_normalizes_for_gating(monkeypatch, razorp
         user_id=user.id,
         plan='Pro Plan',
         status='active',
-        current_period_end=datetime.utcnow() + timedelta(days=30),
+        current_period_end=utcnow() + timedelta(days=30),
     )
     razorpay_session.add(legacy)
     razorpay_session.commit()

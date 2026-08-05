@@ -2,6 +2,8 @@
 Database models for AI-generated assets, usage logs, error logs, and system metrics.
 """
 
+from utils.time import utcnow
+
 from typing import Optional
 from sqlmodel import SQLModel, Field
 from datetime import datetime
@@ -36,8 +38,8 @@ class AIAsset(SQLModel, table=True):
     status: str = Field(default="completed")  # pending, completed, failed
     error_message: Optional[str] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class AIProviderUsageLog(SQLModel, table=True):
@@ -69,7 +71,7 @@ class AIProviderUsageLog(SQLModel, table=True):
     request_payload_hash: Optional[str] = None  # Hash of request payload for dedup
     response_size_bytes: Optional[int] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class ErrorLog(SQLModel, table=True):
@@ -93,7 +95,7 @@ class ErrorLog(SQLModel, table=True):
     stack_trace: Optional[str] = None
     status_code: int = 500
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class SystemMetrics(SQLModel, table=True):
@@ -105,7 +107,7 @@ class SystemMetrics(SQLModel, table=True):
     metric_value: float
     metric_unit: Optional[str] = None
     tags: Optional[str] = None  # JSON string for additional context
-    recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    recorded_at: datetime = Field(default_factory=utcnow)
 
 
 AIAsset.model_rebuild()

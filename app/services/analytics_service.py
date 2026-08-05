@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from sqlmodel import Session, select, func
 from ..models.user import Generation, User, Subscription
 from ..models.token import AIGenerationHistory
@@ -8,7 +10,7 @@ class AnalyticsService:
     @staticmethod
     def get_global_usage_stats(session: Session, days: int = 30):
         """Get aggregate usage stats for the entire platform."""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
 
         # 1. Total Generations by type
         gen_stats = session.exec(
@@ -37,7 +39,7 @@ class AnalyticsService:
     @staticmethod
     def get_user_usage_stats(session: Session, user_id: int, days: int = 30):
         """Get usage stats for a specific user."""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utcnow() - timedelta(days=days)
 
         stats = session.exec(
             select(Generation.type, func.count(Generation.id))

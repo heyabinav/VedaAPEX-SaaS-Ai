@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from utils.time import utcnow
+
 import json
 import uuid
 from datetime import datetime
@@ -13,15 +15,12 @@ from app.models.chat_session import ChatSession
 from app.models.user import User
 from app.services.ai_service import AIToolsService
 
-
 def _clean_title(value: str) -> str:
     value = " ".join((value or "").split()).strip()
     return (value[:60] or "New Chat").strip()
 
-
 def _build_context_messages(messages: list[ChatMessage]) -> list[dict[str, str]]:
     return [{"role": msg.role, "content": msg.content} for msg in messages]
-
 
 def _extract_text(result: Any) -> str:
     if isinstance(result, str):
@@ -39,7 +38,6 @@ def _extract_text(result: Any) -> str:
         return result.get("content") or result.get("text") or result.get("output") or ""
     return str(result)
 
-
 class ChatMemoryService:
     @staticmethod
     def create_session(session: Session, user: User, title: str | None = None) -> ChatSession:
@@ -47,8 +45,8 @@ class ChatMemoryService:
             id=f"chat_{uuid.uuid4().hex[:16]}",
             user_id=user.id,
             title=_clean_title(title or "New Chat"),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utcnow(),
+            updated_at=utcnow(),
             last_message_at=None,
         )
         session.add(chat_session)
@@ -111,7 +109,7 @@ class ChatMemoryService:
             user_id=user.id,
             role=role,
             content=content,
-            created_at=datetime.utcnow(),
+            created_at=utcnow(),
             metadata_json=json.dumps(metadata or {}, ensure_ascii=True, separators=(",", ":")),
             tokens_used=tokens_used,
         )
@@ -120,8 +118,8 @@ class ChatMemoryService:
         session.refresh(msg)
         chat_session = session.get(ChatSession, session_id)
         if chat_session:
-            chat_session.updated_at = datetime.utcnow()
-            chat_session.last_message_at = datetime.utcnow()
+            chat_session.updated_at = utcnow()
+            chat_session.last_message_at = utcnow()
             session.add(chat_session)
             session.commit()
         return msg
@@ -174,7 +172,7 @@ class ChatMemoryService:
         first_user_message = next((msg.content for msg in past_messages if msg.role == "user"), message)
         if chat_session.title == "New Chat":
             chat_session.title = ChatMemoryService._generate_session_title(first_user_message, answer_text)
-            chat_session.updated_at = datetime.utcnow()
+            chat_session.updated_at = utcnow()
             session.add(chat_session)
             session.commit()
 

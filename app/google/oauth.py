@@ -1,5 +1,7 @@
 """Google OAuth 2.0 Authorization Code Flow."""
 
+from utils.time import utcnow
+
 import logging
 import secrets
 from typing import Any, Dict, Optional
@@ -66,7 +68,7 @@ async def exchange_code(code: str) -> Dict[str, Any]:
 
     payload = response.json()
     from datetime import datetime, timedelta
-    now = datetime.utcnow()
+    now = utcnow()
     expires_in = payload.get("expires_in")
     expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
 
@@ -97,7 +99,7 @@ async def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
 
     payload = response.json()
     from datetime import datetime, timedelta
-    now = datetime.utcnow()
+    now = utcnow()
     expires_in = payload.get("expires_in")
     expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
 

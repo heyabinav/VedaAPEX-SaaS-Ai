@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -15,6 +15,7 @@ from app.core.error_handlers import register_error_handlers
 from app.db.session import init_db
 from app.email.database import init_db as init_email_db
 from app.middleware.api_logger import APILoggerMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware
 
 # Routers
@@ -119,6 +120,11 @@ register_error_handlers(app)
 # Add Middlewares (order matters - last added = first executed)
 # -----------------------------------------------------------------------------
 app.add_middleware(APILoggerMiddleware)
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=settings.RATE_LIMIT_PER_SECOND,
+    window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+)
 app.add_middleware(RequestContextMiddleware)
 
 _allowed_origins = settings.MEDIA_ALLOWED_ORIGINS or "http://localhost:3000"

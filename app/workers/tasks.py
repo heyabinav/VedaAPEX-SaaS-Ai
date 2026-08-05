@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import os
 import shutil
 import tempfile
@@ -39,7 +41,7 @@ def update_task_db(
                 task.output_path = output_path
             if error_message:
                 task.error_message = error_message
-            task.updated_at = datetime.utcnow()
+            task.updated_at = utcnow()
             session.add(task)
             session.commit()
             logger.info(f"Updated Task {task_id} in DB: Status={status}, Progress={progress}%")
@@ -60,7 +62,7 @@ def trigger_webhook(task_id: str, status: str, output_url: str = None, error: st
             "status": status,
             "output_url": output_url,
             "error": error,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utcnow().isoformat(),
         }
         response = requests.post(webhook_url, json=payload, timeout=5)
         logger.info(f"Webhook broadcasted to {webhook_url}. Response code: {response.status_code}")

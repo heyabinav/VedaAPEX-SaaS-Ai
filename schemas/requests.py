@@ -1,18 +1,13 @@
 """Request schemas."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SearchRequest(BaseModel):
     """Unified search request."""
 
-    query: str = Field(..., min_length=2, max_length=200, description="Search query")
-    media_type: str = Field(default="image", description="image or video")
-    page: int = Field(default=1, ge=1, description="Page number")
-    page_size: int = Field(default=20, ge=1, le=100, description="Results per page")
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "query": "cancer cell",
                 "media_type": "image",
@@ -20,7 +15,12 @@ class SearchRequest(BaseModel):
                 "page_size": 20,
             }
         }
+    )
 
+    query: str = Field(..., min_length=2, max_length=200, description="Search query")
+    media_type: str = Field(default="image", description="image or video")
+    page: int = Field(default=1, ge=1, description="Page number")
+    page_size: int = Field(default=20, ge=1, le=100, description="Results per page")
 
 class ImageSearchRequest(BaseModel):
     """Image search request."""

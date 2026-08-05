@@ -3,6 +3,8 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
+from utils.time import utcnow
+
 
 class UserOAuthToken(SQLModel, table=True):
     __tablename__ = "user_oauth_tokens"
@@ -13,4 +15,4 @@ class UserOAuthToken(SQLModel, table=True):
     access_token: str = Field(default="")
     refresh_token: str = Field(default="")
     expires_at: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)

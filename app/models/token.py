@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from typing import TYPE_CHECKING, Any, Optional, List
 from sqlalchemy.orm import relationship
 from sqlmodel import SQLModel, Field, Relationship
@@ -55,7 +57,7 @@ class TokenWallet(SQLModel, table=True):
     balance: int = Field(default=100)
     lifetime_earned: int = Field(default=100)
     lifetime_spent: int = Field(default=0)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="wallet")
@@ -73,7 +75,7 @@ class TokenTransaction(SQLModel, table=True):
     balance_after: int
     metadata_json: Optional[str] = None
     ip_address: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="transactions")
@@ -94,7 +96,7 @@ class AIGenerationHistory(SQLModel, table=True):
     model_used: Optional[str] = None
     ip_address: Optional[str] = None
     duration_ms: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="generation_history")
@@ -115,7 +117,7 @@ class SubscriptionPlan(SQLModel, table=True):
     features: str = ""  # JSON string
     is_active: bool = Field(default=True)
     sort_order: int = Field(default=0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user_subscriptions: Any = Relationship(
         sa_relationship=relationship("UserSubscription", back_populates="plan")
@@ -129,10 +131,10 @@ class UserSubscription(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", unique=True, index=True)
     plan_id: int = Field(foreign_key="subscription_plan.id")
     status: str = Field(default="active")
-    current_period_start: datetime = Field(default_factory=datetime.utcnow)
+    current_period_start: datetime = Field(default_factory=utcnow)
     current_period_end: datetime
     payment_id: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="user_subscription")
@@ -149,7 +151,7 @@ class DailyReward(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     amount: int
     streak: int = Field(default=1)
-    claimed_at: datetime = Field(default_factory=datetime.utcnow)
+    claimed_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="daily_rewards")
@@ -166,7 +168,7 @@ class PromoCode(SQLModel, table=True):
     current_uses: int = Field(default=0)
     expires_at: Optional[datetime] = None
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     usages: Any = Relationship(
         sa_relationship=relationship("PromoCodeUsage", back_populates="promo_code")
@@ -179,7 +181,7 @@ class PromoCodeUsage(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     promo_code_id: int = Field(foreign_key="promo_code.id")
     credits_awarded: int
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="promo_usages")
@@ -198,7 +200,7 @@ class UserSession(SQLModel, table=True):
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
     expires_at: datetime
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="sessions")
@@ -215,7 +217,7 @@ class RequestLog(SQLModel, table=True):
     ip_address: str
     status_code: Optional[int] = None
     response_time_ms: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 # ─── API Keys ────────────────────────────────────────────
@@ -228,7 +230,7 @@ class APIKey(SQLModel, table=True):
     prefix: str = Field(index=True)  # First 8 chars for display
     is_active: bool = Field(default=True)
     expires_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="api_keys")
@@ -243,7 +245,7 @@ class APIUsage(SQLModel, table=True):
     tool_type: str = Field(index=True)  # text, image, video, etc.
     count: int = Field(default=0)
     date: str = Field(index=True)  # YYYY-MM-DD
-    last_requested_at: datetime = Field(default_factory=datetime.utcnow)
+    last_requested_at: datetime = Field(default_factory=utcnow)
 
     user: Any = Relationship(
         sa_relationship=relationship("User", back_populates="api_usage")
@@ -267,8 +269,8 @@ class PaymentOrder(SQLModel, table=True):
     provider_payload_json: Optional[str] = None
     payment_id: Optional[str] = None
     signature: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
     paid_at: Optional[datetime] = None
 
     transaction: Any = Relationship(
@@ -290,8 +292,8 @@ class PaymentTransaction(SQLModel, table=True):
     currency: str = Field(default="INR")
     metadata_json: Optional[str] = None
     provider_payload_json: Optional[str] = None
-    verified_at: datetime = Field(default_factory=datetime.utcnow)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    verified_at: datetime = Field(default_factory=utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
     payment_order: Any = Relationship(
         sa_relationship=relationship("PaymentOrder", back_populates="transaction")

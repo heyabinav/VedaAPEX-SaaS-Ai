@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import os
 from datetime import datetime
 
@@ -10,7 +12,7 @@ class ExhaustionService:
     @staticmethod
     def mark_crashed():
         """Mark that the server has crashed for today due to API exhaustion."""
-        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        today_str = utcnow().strftime("%Y-%m-%d")
         try:
             with open(CRASH_FILE, "w") as f:
                 f.write(today_str)
@@ -26,7 +28,7 @@ class ExhaustionService:
         try:
             with open(CRASH_FILE, "r") as f:
                 crashed_date = f.read().strip()
-            today_str = datetime.utcnow().strftime("%Y-%m-%d")
+            today_str = utcnow().strftime("%Y-%m-%d")
             return crashed_date == today_str
         except Exception:
             return False

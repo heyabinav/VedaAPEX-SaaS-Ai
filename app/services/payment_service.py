@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import hmac
 import hashlib
 import json
@@ -103,8 +105,8 @@ class PaymentService:
             status=PaymentOrderStatus.CREATED,
             notes_json=json.dumps(payload["notes"]),
             provider_payload_json=json.dumps(order_data),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utcnow(),
+            updated_at=utcnow(),
         )
         session.add(order)
         session.commit()
@@ -169,7 +171,7 @@ class PaymentService:
                 if provider_payload
                 else existing_transaction.provider_payload_json
             )
-            existing_transaction.verified_at = datetime.utcnow()
+            existing_transaction.verified_at = utcnow()
             session.add(existing_transaction)
         else:
             session.add(
@@ -187,15 +189,15 @@ class PaymentService:
                     provider_payload_json=(
                         json.dumps(provider_payload) if provider_payload else None
                     ),
-                    verified_at=datetime.utcnow(),
+                    verified_at=utcnow(),
                 )
             )
 
         order.status = PaymentOrderStatus.PAID
         order.payment_id = payment_id
         order.signature = signature
-        order.paid_at = order.paid_at or datetime.utcnow()
-        order.updated_at = datetime.utcnow()
+        order.paid_at = order.paid_at or utcnow()
+        order.updated_at = utcnow()
         order.provider_payload_json = (
             json.dumps(provider_payload) if provider_payload else order.provider_payload_json
         )

@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import os
 from datetime import datetime, timedelta
 
@@ -22,7 +24,7 @@ def test_save_and_retrieve_encrypted_oauth_token(tmp_path):
             "figma",
             "access-secret",
             "refresh-secret",
-            datetime.utcnow() + timedelta(hours=1),
+            utcnow() + timedelta(hours=1),
             session=session,
         )
 

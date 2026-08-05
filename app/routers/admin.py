@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlmodel import Session, select
 
@@ -174,7 +176,7 @@ async def get_platform_analytics(
     stats = AnalyticsService.get_global_usage_stats(session, days)
 
     # Keep some of the legacy/quick stats
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     new_users_today = len(session.exec(select(User).where(User.created_at >= today_start)).all())
 
     stats["new_users_today"] = new_users_today

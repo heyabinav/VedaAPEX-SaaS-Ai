@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
@@ -28,7 +30,7 @@ class FigmaService:
         if not token_data or not token_data.get("access_token"):
             raise RuntimeError("Figma not connected. Please connect at /api/v1/figma/connect")
 
-        if token_data.get("expires_at") and datetime.utcnow() >= token_data["expires_at"] - timedelta(minutes=5):
+        if token_data.get("expires_at") and utcnow() >= token_data["expires_at"] - timedelta(minutes=5):
             refreshed = await FigmaOAuthService.refresh_token(token_data.get("refresh_token") or "")
             if refreshed.get("access_token"):
                 from app.helpers.token_helper import save_user_token

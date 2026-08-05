@@ -1,5 +1,7 @@
 """Cron jobs for daily credit distribution, session cleanup, subscription expiry."""
 
+from utils.time import utcnow
+
 import threading
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
@@ -57,7 +59,7 @@ def cleanup_expired_sessions():
     print("[Cron] Cleaning expired sessions...")
     with Session(engine) as session:
         expired = session.exec(
-            select(UserSession).where(UserSession.expires_at < datetime.utcnow())
+            select(UserSession).where(UserSession.expires_at < utcnow())
         ).all()
         for s in expired:
             session.delete(s)
@@ -74,7 +76,7 @@ def expire_subscriptions():
         subs = session.exec(
             select(UserSubscription).where(
                 UserSubscription.status == "active",
-                UserSubscription.current_period_end < datetime.utcnow(),
+                UserSubscription.current_period_end < utcnow(),
             )
         ).all()
         for s in subs:
@@ -95,7 +97,7 @@ def reset_daily_api_usage():
     from app.models.token import APIUsage
 
     with Session(engine) as session:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = utcnow().strftime("%Y-%m-%d")
         # We delete old records to keep DB lean, or just let new day records be created
         old_usage = session.exec(select(APIUsage).where(APIUsage.date < today)).all()
         for u in old_usage:

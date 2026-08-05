@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -24,7 +26,7 @@ class CanvaService:
         if not token_data or not token_data.get("access_token"):
             raise RuntimeError("Canva not connected. Please connect at /api/v1/canva/connect")
 
-        if token_data.get("expires_at") and datetime.utcnow() >= token_data["expires_at"] - timedelta(minutes=5):
+        if token_data.get("expires_at") and utcnow() >= token_data["expires_at"] - timedelta(minutes=5):
             refreshed = await CanvaOAuthService.refresh_token(token_data.get("refresh_token") or "")
             if refreshed.get("access_token"):
                 save_user_token(

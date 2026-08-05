@@ -1,8 +1,10 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
+
     PROJECT_NAME: str = "VedaCLI"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME_IN_PRODUCTION"
@@ -553,6 +555,10 @@ class Settings(BaseSettings):
     # Environment mode
     APP_ENV: str = "development"
 
+    # Rate limiting
+    RATE_LIMIT_PER_SECOND: int = 40
+    RATE_LIMIT_WINDOW_SECONDS: int = 1
+
     RAZORPAY_KEY_ID: Optional[str] = None
     RAZORPAY_KEY_SECRET: Optional[str] = None
     RAZORPAY_WEBHOOK_SECRET: Optional[str] = None
@@ -584,11 +590,5 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 150
     ALLOWED_UPLOAD_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.pdf,.docx,.xlsx,.pptx"
     ADMIN_IP_WHITELIST: Optional[str] = None
-
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
-        extra = "ignore"
-
 
 settings = Settings()

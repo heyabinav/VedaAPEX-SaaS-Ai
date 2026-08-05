@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import os
 import json
 import uuid
@@ -391,7 +393,7 @@ class DocumentService:
                 # Timestamp on the right
                 self.set_font("Helvetica", "", 8)
                 self.set_xy(self.w - self.r_margin - 50, 5)
-                self.cell(50, 8, _dt.utcnow().strftime("%Y-%m-%d %H:%M UTC"), align="R")
+                self.cell(50, 8, utcnow().strftime("%Y-%m-%d %H:%M UTC"), align="R")
                 self.set_y(22)
 
             def footer(self):

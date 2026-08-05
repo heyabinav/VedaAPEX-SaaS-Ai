@@ -1,5 +1,7 @@
 """Authentication routes for email verification."""
 
+from utils.time import utcnow
+
 import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -240,7 +242,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)) -> LoginRe
         # Verify password
         if not user.verify_password(request.password):
             user.failed_login_attempts += 1
-            user.last_failed_login_at = datetime.utcnow()
+            user.last_failed_login_at = utcnow()
 
             if user.failed_login_attempts >= EmailConfig.MAX_LOGIN_ATTEMPTS:
                 logger.warning(f"⚠️  Too many failed login attempts for: {request.email}")
@@ -259,7 +261,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)) -> LoginRe
             )
 
         # Update login timestamp and reset failed attempts
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = utcnow()
         user.failed_login_attempts = 0
         db.commit()
 
@@ -327,7 +329,7 @@ async def verify_email(token: str, db: Session = Depends(get_db)) -> VerifyEmail
 
         # Update user
         user.is_email_verified = True
-        user.email_verified_at = datetime.utcnow()
+        user.email_verified_at = utcnow()
         user.verification_token = None  # Clear token after use
         user.verification_token_expires = None
         db.commit()
@@ -444,5 +446,5 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "email-verification",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     }

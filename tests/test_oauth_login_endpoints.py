@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI
@@ -81,7 +83,7 @@ def test_canva_refresh_returns_updated_tokens(monkeypatch):
         return {
             "access_token": "new-access-token",
             "refresh_token": "new-refresh-token",
-            "expires_at": datetime.utcnow() + timedelta(hours=1),
+            "expires_at": utcnow() + timedelta(hours=1),
         }
 
     async def fake_save_canva_tokens_for_user(user, token_data, session):

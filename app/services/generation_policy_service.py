@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -80,7 +82,7 @@ class GenerationPolicyService:
 
     @staticmethod
     def get_daily_credits_used(session: Session, user_id: int) -> int:
-        start_of_day = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_day = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         history = session.exec(
             select(AIGenerationHistory).where(
                 AIGenerationHistory.user_id == user_id,

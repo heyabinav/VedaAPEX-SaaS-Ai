@@ -118,6 +118,15 @@ def register_error_handlers(app: FastAPI) -> None:
             exc.detail,
         )
 
+        detail = exc.detail
+        if isinstance(detail, dict) and detail.get("error_code"):
+            body = dict(detail)
+            body.setdefault("success", False)
+            body.setdefault("status_code", exc.status_code)
+            body.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+            body.setdefault("request_id", getattr(request.state, "request_id", ""))
+            return JSONResponse(status_code=exc.status_code, content=body)
+
         error_code_map = {
             400: "BAD_REQUEST",
             401: "UNAUTHORIZED",
@@ -134,7 +143,6 @@ def register_error_handlers(app: FastAPI) -> None:
             504: "GATEWAY_TIMEOUT",
         }
 
-        detail = exc.detail
         message = detail if isinstance(detail, str) else str(detail)
 
         return _error_response(

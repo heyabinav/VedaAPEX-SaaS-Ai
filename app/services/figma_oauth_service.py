@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
@@ -51,7 +53,7 @@ class FigmaOAuthService:
             raise ValueError(f"Figma token exchange failed: {response.text}")
 
         payload = response.json()
-        now = datetime.utcnow()
+        now = utcnow()
         expires_in = payload.get("expires_in")
         expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
 
@@ -82,7 +84,7 @@ class FigmaOAuthService:
             raise ValueError(f"Figma refresh token failed: {response.text}")
 
         payload = response.json()
-        now = datetime.utcnow()
+        now = utcnow()
         expires_in = payload.get("expires_in")
         expires_at = now + timedelta(seconds=int(expires_in)) if expires_in else None
 

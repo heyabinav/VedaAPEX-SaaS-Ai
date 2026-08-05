@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.user_oauth_tokens import UserOAuthToken
+from utils.time import utcnow
 
 logger = logging.getLogger("auth.token_helper")
 
@@ -147,4 +148,4 @@ def is_token_valid(
     if not expires_at:
         return bool(token_data.get("access_token"))
 
-    return datetime.utcnow() < expires_at - timedelta(minutes=5)
+    return utcnow() < expires_at - timedelta(minutes=5)

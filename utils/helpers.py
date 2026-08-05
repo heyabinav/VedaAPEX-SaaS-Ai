@@ -1,8 +1,9 @@
 """Helper utilities."""
 
 import logging
-from datetime import datetime
 from typing import Dict
+
+from utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class Helpers:
     @staticmethod
     def get_timestamp() -> str:
         """Get ISO 8601 timestamp."""
-        return datetime.utcnow().isoformat()
+        return utcnow().isoformat()
 
     @staticmethod
     def truncate_string(text: str, max_length: int = 100) -> str:

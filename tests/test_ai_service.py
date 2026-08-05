@@ -27,6 +27,27 @@ def test_generate_text_with_huggingface_space(monkeypatch):
     assert result == "Response from CohereLabs c4ai-command"
 
 
+def test_generate_text_returns_fallback_when_provider_fails(monkeypatch):
+    async def fake_run_model(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="Hello",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="replicate",
+        )
+    )
+
+    assert "unable to reach the text generation service" in result.lower()
+
+
 def test_generate_image_with_piapi_provider(monkeypatch):
     async def fake_generate_image(prompt, tier, aspect_ratio):
         assert prompt == "car"

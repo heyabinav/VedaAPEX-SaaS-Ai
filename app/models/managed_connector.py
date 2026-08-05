@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from utils.time import utcnow
+
 from datetime import datetime
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
-
 
 class ManagedConnector(SQLModel, table=True):
     __tablename__ = "managed_connector"
@@ -25,8 +26,8 @@ class ManagedConnector(SQLModel, table=True):
     discovered_tools_json: str = Field(default="[]")
     is_active: bool = Field(default=True, index=True)
     created_by_user_id: int = Field(foreign_key="user.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
     last_validated_at: Optional[datetime] = None
     validation_status: str = Field(default="pending", index=True)
     validation_error: Optional[str] = None

@@ -1,3 +1,5 @@
+from utils.time import utcnow
+
 import json
 from datetime import datetime, timedelta
 from typing import Optional
@@ -83,8 +85,8 @@ class SubscriptionService:
     def _period_end_for_plan(plan: SubscriptionPlan) -> datetime:
         cycle = (plan.billing_cycle or "monthly").lower()
         if "year" in cycle:
-            return datetime.utcnow() + timedelta(days=365)
-        return datetime.utcnow() + timedelta(days=30)
+            return utcnow() + timedelta(days=365)
+        return utcnow() + timedelta(days=30)
 
     @staticmethod
     def activate_plan(
@@ -101,7 +103,7 @@ class SubscriptionService:
         if current:
             current.plan_id = plan.id
             current.status = "active"
-            current.current_period_start = datetime.utcnow()
+            current.current_period_start = utcnow()
             current.current_period_end = period_end
             if payment_id:
                 current.payment_id = payment_id
@@ -112,7 +114,7 @@ class SubscriptionService:
                 user_id=user.id,
                 plan_id=plan.id,
                 status="active",
-                current_period_start=datetime.utcnow(),
+                current_period_start=utcnow(),
                 current_period_end=period_end,
                 payment_id=payment_id,
             )
@@ -138,7 +140,7 @@ class SubscriptionService:
         # Update User model convenience fields
         user.plan = normalize_plan_slug(plan.slug or plan.name)
         user.is_pro = is_paid_plan(plan.slug or plan.name)
-        user.subscription_start = datetime.utcnow()
+        user.subscription_start = utcnow()
         user.subscription_end = period_end
         session.add(user)
 
