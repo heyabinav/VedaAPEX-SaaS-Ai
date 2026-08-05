@@ -1,4 +1,8 @@
 import asyncio
+from io import BytesIO
+
+import pytest
+from PIL import Image
 
 from app.services.ai_service import AIToolsService
 
@@ -72,22 +76,19 @@ def test_generate_image_with_piapi_provider(monkeypatch):
     assert result == ["https://example.com/car.png"]
 
 
-def test_is_true_exhaustion_error_matches_all_provider_failures():
+def test_is_true_exhaustion_error_matches_real_exhaustion_signals():
     from app.routers.ai_tools import _is_true_exhaustion_error
 
-    assert _is_true_exhaustion_error("All providers failed for image. Last error: ...")
+    assert not _is_true_exhaustion_error("All providers failed for image. Last error: ...")
     assert _is_true_exhaustion_error("All free providers failed due to rate limits")
     assert _is_true_exhaustion_error("All premium providers failed: last error 429")
     assert _is_true_exhaustion_error("All platforms failed")
     assert _is_true_exhaustion_error("All tiers exhausted")
 
 
-def test_is_true_exhaustion_error_does_not_match_provider_rate_limits():
+def test_is_true_exhaustion_error_does_not_match_generic_provider_failures():
     from app.routers.ai_tools import _is_true_exhaustion_error
-
-    assert not _is_true_exhaustion_error("Rate limit exceeded for provider x")
     assert not _is_true_exhaustion_error("Unauthorized access token")
-    assert not _is_true_exhaustion_error("Quota exceeded on one provider")
     assert not _is_true_exhaustion_error("API key expired")
 
 
@@ -140,3 +141,76 @@ def test_generate_text_concurrent_calls(monkeypatch):
 
     results = asyncio.run(run_many())
     assert results == ["Concurrent response"] * 10
+
+
+def test_normalize_image_generation_result_stores_raw_bytes(monkeypatch):
+    from app.routers.ai_tools import _normalize_image_generation_result
+
+    class DummyAsset:
+        proxy_url = "/api/v1/assets/123"
+
+    captured = {}
+
+    def fake_store_generated_image_bytes(
+        session,
+        *,
+        user_id,
+        image_bytes,
+        provider,
+        model=None,
+        prompt=None,
+        negative_prompt=None,
+        resolution=None,
+        seed=None,
+        generation_time_ms=None,
+        request_id=None,
+        original_url=None,
+    ):
+        captured["user_id"] = user_id
+        captured["image_bytes"] = image_bytes
+        captured["provider"] = provider
+        return DummyAsset()
+
+    monkeypatch.setattr(
+        "app.routers.ai_tools.asset_storage.store_generated_image_bytes",
+        fake_store_generated_image_bytes,
+    )
+
+    buffer = BytesIO()
+    Image.new("RGB", (1, 1), (255, 0, 0)).save(buffer, format="PNG")
+    image_bytes = buffer.getvalue()
+
+    result = _normalize_image_generation_result(
+        image_bytes,
+        session=object(),
+        user_id=7,
+        provider="cloudflare",
+        prompt="generate a car image",
+    )
+
+    assert result == "/api/v1/assets/123"
+    assert captured["user_id"] == 7
+    assert captured["provider"] == "cloudflare"
+    assert captured["image_bytes"] == image_bytes
+
+
+
+def test_normalize_image_generation_result_rejects_invalid_bytes(monkeypatch):
+    from app.routers.ai_tools import InvalidGeneratedImageError, _normalize_image_generation_result
+
+    def fake_store_generated_image_bytes(*args, **kwargs):
+        raise ValueError("Generated image provider returned invalid image bytes")
+
+    monkeypatch.setattr(
+        "app.routers.ai_tools.asset_storage.store_generated_image_bytes",
+        fake_store_generated_image_bytes,
+    )
+
+    with pytest.raises(InvalidGeneratedImageError):
+        _normalize_image_generation_result(
+            b"\xff\x00\x01",
+            session=object(),
+            user_id=7,
+            provider="cloudflare",
+            prompt="generate a car image",
+        )

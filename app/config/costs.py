@@ -18,11 +18,11 @@ SUBSCRIPTION_PLANS = {
         "slug": "free",
         "price": 0,
         "token_allocation": 100,
-        "daily_credits": 10,
+        "daily_credits": 200,
         "features": json.dumps(
             [
                 "100 credits on signup",
-                "10 daily free credits",
+                "200 daily free credits",
                 "Basic image generation",
                 "Standard quality",
                 "Community support",
@@ -137,7 +137,7 @@ DAILY_REWARD_TIERS = [
 
 SIGNUP_BONUS_CREDITS = 100
 REFERRAL_BONUS_CREDITS = 50
-DAILY_FREE_CREDITS = 10
+DAILY_FREE_CREDITS = 200
 
 
 def get_daily_reward_credits(streak: int) -> int:

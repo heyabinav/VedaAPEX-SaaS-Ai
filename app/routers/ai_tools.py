@@ -34,6 +34,7 @@ from ..schemas.ai_tools import (
     Furniture3DGenerationRequest,
 )
 from ..services.ai_service import AIToolsService
+from ..services.asset_storage_service import asset_storage
 from ..services.auth_service import AuthService
 from ..services.generation_policy_service import GenerationPolicyService
 from ..services.smart_generation_service import (
@@ -82,6 +83,63 @@ def _extract_output_url(result: Any) -> str | None:
     return None
 
 
+class InvalidGeneratedImageError(ValueError):
+    pass
+
+
+def _normalize_image_generation_result(
+    result: Any,
+    *,
+    session: Session,
+    user_id: int,
+    provider: str,
+    prompt: str,
+    model: str | None = None,
+) -> Any:
+    if isinstance(result, (bytes, bytearray)):
+        try:
+            asset = asset_storage.store_generated_image_bytes(
+                session,
+                user_id=user_id,
+                image_bytes=bytes(result),
+                provider=provider,
+                model=model,
+                prompt=prompt,
+            )
+        except ValueError as exc:
+            raise InvalidGeneratedImageError(str(exc)) from exc
+        return asset.proxy_url
+
+    if isinstance(result, list):
+        normalized: list[Any] = []
+        for item in result:
+            normalized.append(
+                _normalize_image_generation_result(
+                    item,
+                    session=session,
+                    user_id=user_id,
+                    provider=provider,
+                    prompt=prompt,
+                    model=model,
+                )
+            )
+        return normalized
+
+    if isinstance(result, dict):
+        normalized_dict: dict[str, Any] = {}
+        for key, value in result.items():
+            normalized_dict[key] = _normalize_image_generation_result(
+                value,
+                session=session,
+                user_id=user_id,
+                provider=provider,
+                prompt=prompt,
+                model=model,
+            )
+        return normalized_dict
+
+    return result
+
 def _daily_limit_error(policy, gen_type: str) -> HTTPException:
     return HTTPException(
         status_code=429,
@@ -107,7 +165,10 @@ def _is_true_exhaustion_error(err_msg: str) -> bool:
             "all tiers",
             "all free providers failed",
             "all premium providers failed",
-            "all providers failed",
+            "rate limit",
+            "quota exceeded",
+            "quota limit",
+            "exhausted",
         ]
     )
 
@@ -190,6 +251,30 @@ async def check_and_log_generation(
             kwargs=kwargs,
         )
         result = routed.result
+        if gen_type.lower() == "image":
+            result = _normalize_image_generation_result(
+                result,
+                session=session,
+                user_id=user.id,
+                provider=routed.provider or kwargs.get("provider") or "unknown",
+                prompt=log_prompt,
+                model=kwargs.get("model"),
+            )
+
+    except InvalidGeneratedImageError as e:
+        session.add(
+            AIGenerationHistory(
+                user_id=user.id,
+                type=policy.cost_key,
+                prompt=log_prompt,
+                cost=0,
+                status="FAILED",
+                provider=kwargs.get("provider"),
+                created_at=utcnow(),
+            )
+        )
+        session.commit()
+        raise HTTPException(status_code=502, detail=str(e))
 
     except Exception as e:
         session.add(

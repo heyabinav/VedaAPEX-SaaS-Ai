@@ -15,11 +15,14 @@ import hashlib
 import logging
 import os
 import shutil
+import tempfile
 import time
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
+from PIL import Image, UnidentifiedImageError
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -166,6 +169,73 @@ class AssetStorageService:
         )
 
         return asset
+
+    def store_generated_image_bytes(
+        self,
+        session: Session,
+        *,
+        user_id: int,
+        image_bytes: bytes,
+        provider: str = "unknown",
+        model: Optional[str] = None,
+        prompt: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        resolution: Optional[str] = None,
+        seed: Optional[int] = None,
+        generation_time_ms: Optional[int] = None,
+        request_id: Optional[str] = None,
+        original_url: Optional[str] = None,
+    ) -> AIAsset:
+        """Persist generated image bytes and return the stored asset record."""
+        if not image_bytes:
+            raise ValueError("Generated image provider returned an empty image response")
+
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                image.load()
+                image_format = (image.format or "").upper()
+        except UnidentifiedImageError as exc:
+            raise ValueError("Generated image provider returned invalid image bytes") from exc
+
+        format_map = {
+            "PNG": (".png", "image/png"),
+            "JPEG": (".jpg", "image/jpeg"),
+            "JPG": (".jpg", "image/jpeg"),
+            "WEBP": (".webp", "image/webp"),
+        }
+        suffix, _ = format_map.get(image_format, ("", "application/octet-stream"))
+        if not suffix:
+            raise ValueError(
+                f"Generated image provider returned unsupported image format: {image_format or 'unknown'}"
+            )
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        try:
+            temp_file.write(image_bytes)
+            temp_file.flush()
+            temp_file.close()
+
+            return self.upload_asset(
+                session,
+                user_id=user_id,
+                local_path=temp_file.name,
+                original_filename=generate_secure_filename(suffix),
+                original_url=original_url,
+                provider=provider,
+                model=model,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                resolution=resolution,
+                seed=seed,
+                generation_time_ms=generation_time_ms,
+                request_id=request_id,
+            )
+        finally:
+            if os.path.exists(temp_file.name):
+                try:
+                    os.remove(temp_file.name)
+                except OSError:
+                    pass
 
     def get_asset_path(self, r2_key: str) -> Optional[str]:
         """Get the local path or download from R2 if needed."""
