@@ -1,4 +1,4 @@
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from sqlmodel import Session, select, func
 from ..models.user import Generation, User, Subscription

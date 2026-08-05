@@ -1,6 +1,6 @@
 """Database models for email verification."""
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Boolean, Integer, create_engine

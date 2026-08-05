@@ -1,4 +1,4 @@
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlmodel import Session, select

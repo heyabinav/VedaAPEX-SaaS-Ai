@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 import ipaddress
 import json

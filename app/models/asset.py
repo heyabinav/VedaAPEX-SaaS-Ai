@@ -2,7 +2,7 @@
 Database models for AI-generated assets, usage logs, error logs, and system metrics.
 """
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from typing import Optional
 from sqlmodel import SQLModel, Field

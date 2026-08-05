@@ -13,7 +13,7 @@ Key fixes:
     (race‑condition / duplicate email)
 """
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 import logging
 import uuid

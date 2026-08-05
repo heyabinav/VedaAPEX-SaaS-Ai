@@ -3,7 +3,7 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 
 class UserOAuthToken(SQLModel, table=True):

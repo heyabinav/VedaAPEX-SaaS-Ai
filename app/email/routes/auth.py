@@ -1,6 +1,6 @@
 """Authentication routes for email verification."""
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 import logging
 from datetime import datetime

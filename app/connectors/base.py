@@ -1,6 +1,6 @@
 """Base connector class - all providers extend this."""
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 import logging
 from abc import ABC, abstractmethod

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from datetime import datetime
 from typing import Optional

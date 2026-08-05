@@ -1,4 +1,4 @@
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from sqlmodel import Session, select
 from datetime import datetime

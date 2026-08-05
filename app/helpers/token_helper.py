@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from app.db.session import get_session
 from app.models.user_oauth_tokens import UserOAuthToken
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 logger = logging.getLogger("auth.token_helper")
 

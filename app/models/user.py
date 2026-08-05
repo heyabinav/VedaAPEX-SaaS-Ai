@@ -1,4 +1,4 @@
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from typing import TYPE_CHECKING, Any, Optional, List
 from sqlalchemy.orm import relationship

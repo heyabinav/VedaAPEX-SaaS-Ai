@@ -1,4 +1,4 @@
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 from dataclasses import dataclass
 from datetime import datetime

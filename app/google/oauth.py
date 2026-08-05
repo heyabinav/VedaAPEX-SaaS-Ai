@@ -1,6 +1,6 @@
 """Google OAuth 2.0 Authorization Code Flow."""
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 import logging
 import secrets

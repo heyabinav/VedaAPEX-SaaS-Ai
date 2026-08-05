@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from utils.time import utcnow
+from app.utils.time import utcnow
 
 """Database model for stored search result payloads."""
 
