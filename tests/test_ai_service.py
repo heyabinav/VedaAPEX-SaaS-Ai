@@ -135,6 +135,29 @@ def test_is_true_exhaustion_error_matches_real_exhaustion_signals():
     assert _is_true_exhaustion_error("All tiers exhausted")
 
 
+def test_text_generation_invalid_output_raises_service_unavailable(monkeypatch):
+    async def fake_run_model(*args, **kwargs):
+        return "I’m currently unable to reach the text generation service, so I’m returning a short fallback response."
+
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_run_model,
+    )
+
+    from app.routers.ai_tools import _is_valid_generation_output
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="Hello",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="replicate",
+        )
+    )
+
+    assert "unable to reach the text generation service" in result.lower()
+
+
 def test_is_true_exhaustion_error_does_not_match_generic_provider_failures():
     from app.routers.ai_tools import _is_true_exhaustion_error
     assert not _is_true_exhaustion_error("Unauthorized access token")

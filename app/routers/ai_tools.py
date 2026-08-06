@@ -283,6 +283,11 @@ async def check_and_log_generation(
         )
         result = routed.result
         if not _is_valid_generation_output(result, gen_type):
+            if gen_type.lower() == "text":
+                raise HTTPException(
+                    status_code=503,
+                    detail="Text generation service currently unavailable. Please try again later.",
+                )
             raise ValueError(f"Generated {gen_type} output is empty or invalid")
 
         if gen_type.lower() == "image":
