@@ -54,7 +54,7 @@ class SupabaseService:
 
     @staticmethod
     def _headers(access_token: Optional[str] = None) -> dict[str, str]:
-        api_key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_KEY
+        api_key = settings.SUPABASE_KEY or settings.SUPABASE_SERVICE_ROLE_KEY
         if not api_key:
             raise RuntimeError("Supabase auth is not configured (SUPABASE_KEY missing).")
 
