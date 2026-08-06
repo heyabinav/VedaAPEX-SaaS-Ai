@@ -2,13 +2,13 @@ import json
 
 # ─── Generation Credit Costs ────────────────────────────
 GENERATION_COSTS = {
-    "IMAGE": 5,
+    "IMAGE": 15,
     "VIDEO": 20,
-    "PPT": 10,
-    "MODEL_3D": 15,
-    "BG_REMOVAL": 2,
-    "TEXT": 1,
-    "TTS": 3,
+    "PPT": 15,
+    "MODEL_3D": 40,
+    "BG_REMOVAL": 10,
+    "TEXT": 10,
+    "TTS": 40,
 }
 
 # ─── Subscription Plans Config ──────────────────────────
