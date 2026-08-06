@@ -31,6 +31,55 @@ def test_generate_text_with_huggingface_space(monkeypatch):
     assert result == "Response from CohereLabs c4ai-command"
 
 
+def test_generate_text_falls_back_to_another_provider_when_auto_provider_fails(monkeypatch):
+    async def fake_free_run_model(*args, **kwargs):
+        return {"choices": [{"message": {"content": "Recovered response"}}]}
+
+    async def fake_replicate_run_model(*args, **kwargs):
+        raise RuntimeError("replicate down")
+
+    monkeypatch.setattr(
+        "app.services.ai_service.FreeProvider.run_model",
+        fake_free_run_model,
+    )
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_replicate_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="Hello",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="auto",
+        )
+    )
+
+    assert result == "Recovered response"
+
+
+def test_generate_text_handles_missing_provider_value(monkeypatch):
+    async def fake_free_run_model(*args, **kwargs):
+        return {"choices": [{"message": {"content": "Recovered response"}}]}
+
+    monkeypatch.setattr(
+        "app.services.ai_service.FreeProvider.run_model",
+        fake_free_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="Hello",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider=None,
+        )
+    )
+
+    assert result == "Recovered response"
+
+
 def test_generate_text_returns_fallback_when_provider_fails(monkeypatch):
     async def fake_run_model(*args, **kwargs):
         raise RuntimeError("provider down")

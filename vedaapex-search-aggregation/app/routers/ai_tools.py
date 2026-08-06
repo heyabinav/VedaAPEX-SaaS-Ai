@@ -80,6 +80,37 @@ def _extract_output_url(result: Any) -> str | None:
     return None
 
 
+def _is_valid_generation_output(result: Any, gen_type: str) -> bool:
+    if result is None:
+        return False
+
+    if isinstance(result, (str, bytes, bytearray)):
+        if isinstance(result, str):
+            stripped = result.strip()
+            if not stripped:
+                return False
+            if gen_type.lower() == "text" and (
+                stripped.lower().startswith("i’m currently unable")
+                or "unable to reach the text generation service" in stripped.lower()
+            ):
+                return False
+        return True
+
+    if isinstance(result, list):
+        return bool(result) and all(_is_valid_generation_output(item, gen_type) for item in result)
+
+    if isinstance(result, dict):
+        if gen_type.lower() == "text":
+            if isinstance(result.get("choices"), list) and result["choices"]:
+                content = result["choices"][0].get("message", {}).get("content")
+                return isinstance(content, str) and bool(content.strip())
+            if "result" in result:
+                return _is_valid_generation_output(result["result"], gen_type)
+        return bool(result)
+
+    return True
+
+
 def _daily_limit_error(policy, gen_type: str) -> HTTPException:
     return HTTPException(
         status_code=429,
@@ -175,6 +206,8 @@ async def check_and_log_generation(
             kwargs=kwargs,
         )
         result = routed.result
+        if not _is_valid_generation_output(result, gen_type):
+            raise ValueError(f"Generated {gen_type} output is empty or invalid")
 
     except Exception as e:
         session.add(
