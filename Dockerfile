@@ -17,8 +17,11 @@ COPY --chown=user requirements.txt /home/user/app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /home/user/app/requirements.txt
 
+# Copy application code and config files
 COPY --chown=user app/ /home/user/app/app/
+COPY --chown=user .env* /home/user/app/
 
 EXPOSE 7860
 
+# Render provides PORT env var; fallback to 7860 for HF Spaces
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --workers 1"]

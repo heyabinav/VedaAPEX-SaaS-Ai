@@ -227,6 +227,12 @@ async def home():
     return {"status": "ok"}
 
 
+@app.get("/health", tags=["System"])
+async def health_check():
+    """Health check endpoint used by Render, HF Spaces, and load balancers."""
+    return {"status": "healthy", "service": "vedaapex-backend", "version": "2.0.0"}
+
+
 if __name__ == "__main__":
     import uvicorn
 
