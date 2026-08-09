@@ -83,6 +83,34 @@ def _extract_output_url(result: Any) -> str | None:
     return None
 
 
+def _extract_preview_url(value: Any) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped.startswith(("http://", "https://")):
+            return stripped
+        if stripped.startswith("/"):
+            base_url = settings.get_app_base_url()
+            return f"{base_url}{stripped}"
+        return stripped
+
+    if isinstance(value, dict):
+        for key in ("preview_url", "url", "output_url", "proxy_url"):
+            candidate = value.get(key)
+            if candidate:
+                return _extract_preview_url(candidate)
+        return None
+
+    if isinstance(value, list) and value:
+        for item in value:
+            preview_url = _extract_preview_url(item)
+            if preview_url:
+                return preview_url
+
+    return None
+
+
 def _is_valid_generation_output(result: Any, gen_type: str) -> bool:
     if result is None:
         return False
@@ -341,6 +369,7 @@ async def check_and_log_generation(
         raise e
 
     output_url = _extract_output_url(result)
+    preview_url = _extract_preview_url(result)
 
     generation_log = Generation(
         user_id=user.id,
@@ -356,7 +385,7 @@ async def check_and_log_generation(
             user_id=user.id,
             type=policy.cost_key,
             prompt=log_prompt,
-            output_url=output_url,
+            output_url=preview_url or output_url,
             cost=policy.usage_cost if policy.daily_credit_limit is not None else 0,
             status="SUCCESS",
             provider=routed.provider,
@@ -388,6 +417,16 @@ async def check_and_log_generation(
                 user.id, gen_type, output_url, user.webhook_url
             )
         )
+
+    if gen_type.lower() == "image" and preview_url:
+        if isinstance(result, list):
+            return [preview_url if item is not None else item for item in result]
+        if isinstance(result, dict):
+            normalized = dict(result)
+            normalized.setdefault("preview_url", preview_url)
+            normalized.setdefault("url", preview_url)
+            return normalized
+        return preview_url
 
     return result
 

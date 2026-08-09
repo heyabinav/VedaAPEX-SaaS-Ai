@@ -164,6 +164,13 @@ def test_is_true_exhaustion_error_does_not_match_generic_provider_failures():
     assert not _is_true_exhaustion_error("API key expired")
 
 
+def test_extract_preview_url_builds_absolute_asset_link():
+    from app.routers.ai_tools import _extract_preview_url
+
+    assert _extract_preview_url("/api/v1/assets/42") == "https://vedaapex-saas-ai.onrender.com/api/v1/assets/42"
+    assert _extract_preview_url("https://example.com/image.png") == "https://example.com/image.png"
+
+
 def test_text_fallback_response_is_treated_as_valid_output():
     from app.routers.ai_tools import _is_valid_generation_output
 
