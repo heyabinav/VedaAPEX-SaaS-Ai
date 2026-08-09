@@ -22,6 +22,19 @@ from app.core.config import settings
 logger = logging.getLogger("db.session")
 
 
+def _create_engine(database_url: str):
+    is_sqlite = database_url.startswith("sqlite")
+    return create_engine(
+        database_url,
+        echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+        **(
+            {"connect_args": {"check_same_thread": False}}
+            if is_sqlite
+            else {"pool_pre_ping": True, "pool_size": 5, "max_overflow": 10}
+        ),
+    )
+
+
 def _get_database_url() -> str:
     """
     Return a corrected DATABASE_URL suitable for SQLAlchemy.
@@ -47,15 +60,19 @@ _database_url = _get_database_url()
 # Use pool_pre_ping for PostgreSQL to avoid stale-connection errors on Render.
 _is_sqlite = _database_url.startswith("sqlite")
 
-engine = create_engine(
-    _database_url,
-    echo=os.getenv("SQL_ECHO", "false").lower() == "true",  # off by default
-    **(
-        {"connect_args": {"check_same_thread": False}}
-        if _is_sqlite
-        else {"pool_pre_ping": True, "pool_size": 5, "max_overflow": 10}
-    ),
-)
+engine = _create_engine(_database_url)
+
+
+def _fallback_to_sqlite() -> None:
+    global engine, _database_url, _is_sqlite
+    fallback_url = "sqlite:///./vedaapex.db"
+    logger.warning(
+        "Configured database is unreachable; falling back to local SQLite at %s",
+        fallback_url,
+    )
+    _database_url = fallback_url
+    _is_sqlite = True
+    engine = _create_engine(fallback_url)
 
 
 def init_db():
@@ -72,6 +89,8 @@ def init_db():
     import app.models.managed_connector  # noqa: F401  # Managed MCP connector registry
     import app.models.chat_session  # noqa: F401  # Chat sessions for memory-aware assistant
     import app.models.chat_message  # noqa: F401  # Chat messages for memory-aware assistant
+    import app.models.mcp_connector  # noqa: F401  # Custom MCP connectors & OAuth tables
+    import app.models.custom_skill  # noqa: F401  # User Custom Skills table
 
     # Log all registered SQLModel tables for startup diagnostics
     registered_tables = sorted(SQLModel.metadata.tables.keys())
@@ -82,7 +101,16 @@ def init_db():
     )
 
     logger.info("Running SQLModel.metadata.create_all ...")
-    SQLModel.metadata.create_all(engine)
+    try:
+        SQLModel.metadata.create_all(engine)
+    except OperationalError as exc:
+        if not _database_url.startswith("sqlite"):
+            logger.warning("Database initialization failed: %s", exc)
+            _fallback_to_sqlite()
+            SQLModel.metadata.create_all(engine)
+        else:
+            raise
+
     _ensure_missing_schema_columns()
     logger.info("All database tables created/verified successfully.")
 
@@ -147,11 +175,23 @@ def get_session():
     try:
         session = Session(engine)
     except OperationalError as exc:
-        logger.exception("Failed to create database session due to operational error")
-        detail = "Database service unavailable. Please try again later."
-        if settings.APP_ENV != "production":
-            detail = f"Database service unavailable: {exc}"
-        raise HTTPException(status_code=503, detail=detail) from exc
+        if not _database_url.startswith("sqlite"):
+            logger.warning("Database session creation failed, retrying with local SQLite fallback: %s", exc)
+            _fallback_to_sqlite()
+            try:
+                session = Session(engine)
+            except OperationalError as fallback_exc:
+                logger.exception("Failed to create database session after SQLite fallback")
+                detail = "Database service unavailable. Please try again later."
+                if settings.APP_ENV != "production":
+                    detail = f"Database service unavailable: {fallback_exc}"
+                raise HTTPException(status_code=503, detail=detail) from fallback_exc
+        else:
+            logger.exception("Failed to create database session due to operational error")
+            detail = "Database service unavailable. Please try again later."
+            if settings.APP_ENV != "production":
+                detail = f"Database service unavailable: {exc}"
+            raise HTTPException(status_code=503, detail=detail) from exc
     except SQLAlchemyError as exc:
         logger.exception("Database error while opening session", exc_info=True)
         detail = "Database error occurred. Please contact support."

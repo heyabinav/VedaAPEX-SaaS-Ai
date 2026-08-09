@@ -31,9 +31,9 @@ class KreaProvider:
                     "Content-Type": "application/json",
                 }
                 response = await client.post(
-                    "https://api.krea.ai/v1/generations",
+                    "https://api.krea.ai/v1/images/generations",
                     headers=headers,
-                    json={"model": model, "parameters": input_data},
+                    json={"model": model, "prompt": input_data.get("prompt", ""), **input_data},
                 )
                 if response.status_code in [401, 402, 403, 429]:
                     print(f"Krea.ai Tier {tier} exhausted ({response.status_code}). Switching...")

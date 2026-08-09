@@ -36,7 +36,7 @@ class PresentonProvider:
 
                 # Assume standard base URL for presenton
                 response = await client.post(
-                    "https://api.presenton.ai/v1/ppt/presentation/generate",
+                    "https://api.presenton.ai/v1/presentation/generate",
                     headers=headers,
                     json=payload,
                 )
@@ -68,7 +68,7 @@ class PresentonProvider:
                 while True:
                     await asyncio.sleep(3)
                     poll_resp = await client.get(
-                        f"https://api.presenton.ai/v1/ppt/presentation/{job_id}",
+                        f"https://api.presenton.ai/v1/presentation/{job_id}",
                         headers={"Authorization": f"Bearer {api_key}"},
                     )
                     poll_data = poll_resp.json()

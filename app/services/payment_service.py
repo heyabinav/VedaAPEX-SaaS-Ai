@@ -334,3 +334,30 @@ class PaymentService:
             metadata=metadata,
             provider_payload=payload,
         )
+
+    @staticmethod
+    def list_user_payments(session: Session, user_id: int) -> list[dict[str, Any]]:
+        orders = session.exec(
+            select(PaymentOrder)
+            .where(PaymentOrder.user_id == user_id)
+            .order_by(PaymentOrder.created_at.desc())
+        ).all()
+
+        results = []
+        for order in orders:
+            tx = session.exec(
+                select(PaymentTransaction).where(PaymentTransaction.payment_order_id == order.id)
+            ).first()
+            results.append({
+                "id": order.id,
+                "order_id": order.order_id,
+                "payment_id": order.payment_id or (tx.payment_id if tx else None),
+                "amount_paise": order.amount_paise,
+                "amount_rupees": round(order.amount_paise / 100.0, 2),
+                "currency": order.currency,
+                "status": order.status,
+                "purpose": order.purpose,
+                "created_at": order.created_at,
+                "paid_at": order.paid_at,
+            })
+        return results

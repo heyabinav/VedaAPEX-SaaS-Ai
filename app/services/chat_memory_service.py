@@ -14,6 +14,10 @@ from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.user import User
 from app.services.ai_service import AIToolsService
+from app.services.hf_storage.chat import HFChatStorageService
+import logging
+
+logger = logging.getLogger("services.chat_memory_service")
 
 def _clean_title(value: str) -> str:
     value = " ".join((value or "").split()).strip()
@@ -187,6 +191,27 @@ class ChatMemoryService:
         )
 
         history = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit + 2)
+        
+        # Synchronize to Hugging Face Dataset Storage
+        try:
+            formatted_messages = [
+                {
+                    "id": m.id,
+                    "role": m.role,
+                    "content": m.content,
+                    "created_at": m.created_at.isoformat() if hasattr(m.created_at, "isoformat") else str(m.created_at),
+                }
+                for m in history
+            ]
+            HFChatStorageService.sync_session(
+                user_id=user.id,
+                session_id=session_id,
+                title=chat_session.title,
+                messages=formatted_messages,
+            )
+        except Exception as exc:
+            logger.warning("Failed to sync chat session %s to HF storage: %s", session_id, exc)
+
         return {
             "session_id": session_id,
             "title": chat_session.title,

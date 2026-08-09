@@ -78,7 +78,7 @@ class WixProvider:
 
     @staticmethod
     async def run_image_model(input_data: dict, starting_tier: int) -> Any:
-        endpoint = "https://www.wixapis.com/openai/v1/images/generations"
+        endpoint = "https://www.wixapis.com/v1/openai/images/generations"
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None
@@ -118,7 +118,7 @@ class WixProvider:
 
     @staticmethod
     async def run_text_model(input_data: dict, starting_tier: int) -> Any:
-        endpoint = "https://www.wixapis.com/openai/v1/chat/completions"
+        endpoint = "https://www.wixapis.com/v1/openai/chat/completions"
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None

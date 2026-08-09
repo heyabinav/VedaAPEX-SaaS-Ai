@@ -16,6 +16,8 @@ from app.models.search_history_result import SearchHistoryResult
 from app.models.user import User
 from app.routers.auth import get_current_user_auth
 from app.schemas.search_history import (
+    DeepSearchRequest,
+    DeepSearchResponse,
     SearchHistoryCreate,
     SearchHistoryItem,
     SearchHistoryListResponse,
@@ -24,6 +26,7 @@ from app.schemas.search_history import (
     SearchTitleGenerateRequest,
     SearchTitleGenerateResponse,
 )
+from app.services.deep_search_service import DeepSearchService
 
 logger = logging.getLogger("app.routers.search_history")
 
@@ -240,3 +243,54 @@ async def generate_search_title(body: SearchTitleGenerateRequest):
         "title": title,
         "source": body.source,
     }
+
+
+@router.post("/deep", response_model=DeepSearchResponse)
+async def execute_deep_search(
+    body: DeepSearchRequest,
+    user: User = Depends(get_current_user_auth),
+    session: Session = Depends(get_session),
+):
+    """Perform Deep Search intelligence research with query decomposition, multi-source retrieval, and LLM synthesis."""
+    try:
+        result = await DeepSearchService.deep_search(query=body.query, depth=body.depth or "deep")
+
+        history_id = None
+        if body.save_history:
+            title = _clean_title(f"Deep Search: {body.query}")
+            entry = SearchHistory(
+                user_id=user.id,
+                title=title,
+                query=body.query,
+                source="deep_search",
+                notes=f"Subqueries: {', '.join(result.get('subqueries', []))}",
+            )
+            session.add(entry)
+            session.flush()
+
+            if result.get("sources"):
+                session.add(
+                    SearchHistoryResult(
+                        history_id=entry.id,
+                        result_count=len(result["sources"]),
+                        results_json=_serialize_results(result["sources"]),
+                    )
+                )
+
+            session.commit()
+            session.refresh(entry)
+            history_id = entry.id
+
+        return {
+            "success": True,
+            "query": result["query"],
+            "subqueries": result["subqueries"],
+            "report": result["report"],
+            "sources": result["sources"],
+            "total_sources_found": result["total_sources_found"],
+            "history_id": history_id,
+        }
+    except Exception as exc:
+        session.rollback()
+        logger.exception("Deep search failed for query='%s'", body.query)
+        raise HTTPException(status_code=500, detail=f"Deep search failed: {str(exc)}") from exc

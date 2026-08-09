@@ -169,3 +169,69 @@ class InvalidFileError(AppException):
             error_code="INVALID_FILE",
             status_code=400,
         )
+
+
+# Persistent User Skill & Hugging Face Storage Exceptions
+class SkillNotFound(AppException):
+    def __init__(self, message: str = "Skill not found"):
+        super().__init__(message=message, error_code="SKILL_NOT_FOUND", status_code=404)
+
+
+class SkillAlreadyExists(AppException):
+    def __init__(self, message: str = "Skill already exists"):
+        super().__init__(message=message, error_code="SKILL_ALREADY_EXISTS", status_code=409)
+
+
+class InvalidSkillName(AppException):
+    def __init__(self, message: str = "Invalid skill name"):
+        super().__init__(message=message, error_code="INVALID_SKILL_NAME", status_code=400)
+
+
+class InvalidSkillLevel(AppException):
+    def __init__(self, message: str = "Invalid skill level. Allowed: beginner, intermediate, advanced, expert"):
+        super().__init__(message=message, error_code="INVALID_SKILL_LEVEL", status_code=400)
+
+
+class InvalidConfidence(AppException):
+    def __init__(self, message: str = "Invalid confidence score. Must be between 0.0 and 1.0"):
+        super().__init__(message=message, error_code="INVALID_CONFIDENCE", status_code=400)
+
+
+class SkillUnauthorized(AppException):
+    def __init__(self, message: str = "Not authorized to access this skill"):
+        super().__init__(message=message, error_code="SKILL_UNAUTHORIZED", status_code=403)
+
+
+class InvalidUserId(AppException):
+    def __init__(self, message: str = "Invalid user ID"):
+        super().__init__(message=message, error_code="INVALID_USER_ID", status_code=400)
+
+
+class HFStorageUnavailable(AppException):
+    def __init__(self, message: str = "Hugging Face storage service unavailable"):
+        super().__init__(message=message, error_code="HF_STORAGE_UNAVAILABLE", status_code=503)
+
+
+class HFAuthenticationFailed(AppException):
+    def __init__(self, message: str = "Hugging Face authentication failed"):
+        super().__init__(message=message, error_code="HF_AUTHENTICATION_FAILED", status_code=401)
+
+
+class HFPermissionDenied(AppException):
+    def __init__(self, message: str = "Hugging Face permission denied"):
+        super().__init__(message=message, error_code="HF_PERMISSION_DENIED", status_code=403)
+
+
+class HFUploadFailed(AppException):
+    def __init__(self, message: str = "Failed to upload file to Hugging Face"):
+        super().__init__(message=message, error_code="HF_UPLOAD_FAILED", status_code=502)
+
+
+class HFDownloadFailed(AppException):
+    def __init__(self, message: str = "Failed to download file from Hugging Face"):
+        super().__init__(message=message, error_code="HF_DOWNLOAD_FAILED", status_code=502)
+
+
+class HFDeleteFailed(AppException):
+    def __init__(self, message: str = "Failed to delete file from Hugging Face"):
+        super().__init__(message=message, error_code="HF_DELETE_FAILED", status_code=502)

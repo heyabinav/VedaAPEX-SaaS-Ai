@@ -72,3 +72,27 @@ class SearchTitleGenerateResponse(BaseModel):
     success: bool
     title: str
     source: Optional[str] = None
+
+
+class DeepSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=4000)
+    depth: Optional[str] = Field(default="deep", max_length=50)
+    save_history: bool = Field(default=True)
+
+    @field_validator("query", "depth")
+    @classmethod
+    def _strip_text(cls, value: Optional[str]):
+        if value is None:
+            return value
+        cleaned = value.strip()
+        return cleaned or None
+
+
+class DeepSearchResponse(BaseModel):
+    success: bool = True
+    query: str
+    subqueries: list[str]
+    report: str
+    sources: list[dict[str, Any]]
+    total_sources_found: int
+    history_id: Optional[int] = None

@@ -32,7 +32,9 @@ class FalProvider:
                     "Content-Type": "application/json",
                 }
                 response = await client.post(
-                    f"https://fal.run/{model}", headers=headers, json=input_data
+                    f"https://fal.run/v1/models/{model}:generate",
+                    headers=headers,
+                    json=input_data,
                 )
 
                 if response.status_code in [401, 402, 403, 429]:

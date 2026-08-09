@@ -33,8 +33,11 @@ class FireworksProvider:
                 }
 
                 endpoint = input_data.pop(
-                    "endpoint", "https://api.fireworks.ai/inference/v1/image_generation"
+                    "endpoint",
+                    "https://api.fireworks.ai/inference/v1/image_generation",
                 )
+                if endpoint.endswith("/image_generation"):
+                    endpoint = endpoint.rstrip("/")
 
                 payload = {"model": model, **input_data}
                 response = await client.post(endpoint, headers=headers, json=payload)

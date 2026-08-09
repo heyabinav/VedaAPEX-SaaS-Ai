@@ -66,10 +66,13 @@ basicsr>=1.4.2
 realesrgan>=0.3.0
 supabase>=2.0.0
 fastapi-mcp==0.4.0
-mcp==1.12.4
+mcp[cli]>=1.12.4
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
 
 # Async file uploads & background tasks
 aiofiles>=23.2.0
+
+# Hugging Face Hub Storage
+huggingface_hub>=0.20.0

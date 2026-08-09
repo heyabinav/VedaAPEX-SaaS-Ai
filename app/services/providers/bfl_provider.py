@@ -28,10 +28,11 @@ class BFLProvider:
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 }
+                endpoint = "https://api.bfl.ai/v1/flux"
                 response = await client.post(
-                    "https://api.bfl.ai/v1/generate",
+                    endpoint,
                     headers=headers,
-                    json={"model": model, "parameters": input_data},
+                    json={"model": model, "prompt": input_data.get("prompt", ""), **input_data},
                 )
                 if response.status_code in [401, 402, 403, 429]:
                     print(f"BFL.ai Tier {tier} exhausted ({response.status_code}). Switching...")

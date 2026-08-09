@@ -32,8 +32,11 @@ class GetImgProvider:
                     "Accept": "application/json",
                 }
                 endpoint_url = input_data.pop(
-                    "endpoint", "https://api.getimg.ai/v1/essential/text-to-image"
+                    "endpoint",
+                    "https://api.getimg.ai/v2/images/generations",
                 )
+                if endpoint_url.endswith("/text-to-image"):
+                    endpoint_url = "https://api.getimg.ai/v2/images/generations"
 
                 payload = {"model": model, **input_data}
                 response = await client.post(endpoint_url, headers=headers, json=payload)

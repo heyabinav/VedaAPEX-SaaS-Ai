@@ -32,6 +32,8 @@ class FreeProvider:
                     "Content-Type": "application/json",
                 }
                 endpoint = input_data.pop("endpoint", "https://api.free.ai/v1/images/generations")
+                if endpoint.endswith("/v1/images/generations"):
+                    endpoint = endpoint.rstrip("/")
 
                 payload = {"model": model, **input_data}
                 response = await client.post(endpoint, headers=headers, json=payload)

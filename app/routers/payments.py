@@ -25,6 +25,30 @@ class VerifyPaymentRequest(BaseModel):
     metadata: Optional[dict[str, Any]] = None
 
 
+from app.core.config import settings
+
+
+@router.get("/config")
+async def get_payment_config():
+    """Return public Razorpay configuration for frontend checkout modal."""
+    return {
+        "success": True,
+        "key_id": settings.RAZORPAY_KEY_ID or "",
+        "currency": settings.RAZORPAY_CURRENCY or "INR",
+        "min_amount_paisa": int(settings.RAZORPAY_MIN_AMOUNT_PAISA or 1000),
+    }
+
+
+@router.get("/history")
+async def get_payment_history(
+    user: User = Depends(get_current_user_auth),
+    session: Session = Depends(get_session),
+):
+    """Return payment transaction history for the authenticated user."""
+    items = PaymentService.list_user_payments(session, user.id)
+    return {"success": True, "data": items}
+
+
 @router.post("/orders")
 async def create_order(
     payload: CreatePaymentOrderRequest,

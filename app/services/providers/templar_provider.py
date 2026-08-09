@@ -20,7 +20,7 @@ class TemplarProvider:
 
     @staticmethod
     async def run_model(endpoint_path: str, payload: dict, starting_tier: int = 1) -> Any:
-        base_url = "https://tempplar.odysii.in/api"
+        base_url = "https://templar.odysii.in/api"
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             last_error = None

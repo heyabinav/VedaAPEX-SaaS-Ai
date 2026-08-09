@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -52,6 +53,9 @@ from app.services.key_manager import key_manager
 # New routes
 from app.routers.assets import router as assets_router
 from app.routers.admin_dashboard import router as admin_dashboard_router
+from app.routers.mcp_custom import router as mcp_custom_router
+from app.routers.custom_skills import router as custom_skills_router
+from app.routers.persistent_skills import router as persistent_skills_router
 
 # Configure structured logging
 setup_logging(env=settings.APP_ENV)
@@ -60,6 +64,10 @@ logger = logging.getLogger("app.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    runtime_warnings = settings.validate_runtime_environment()
+    if runtime_warnings:
+        logger.warning("Runtime environment warnings: %s", runtime_warnings)
+
     logger.info("Starting VedaCLI Backend...")
     logger.info("Initializing SQLModel Database Tables...")
     try:
@@ -119,6 +127,7 @@ register_error_handlers(app)
 # -----------------------------------------------------------------------------
 # Add Middlewares (order matters - last added = first executed)
 # -----------------------------------------------------------------------------
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(APILoggerMiddleware)
 app.add_middleware(
     RateLimitMiddleware,
@@ -127,10 +136,10 @@ app.add_middleware(
 )
 app.add_middleware(RequestContextMiddleware)
 
-_allowed_origins = settings.MEDIA_ALLOWED_ORIGINS or "http://localhost:3000"
+_allowed_origins = settings.get_allowed_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in _allowed_origins.split(",") if origin.strip()],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -185,6 +194,15 @@ app.include_router(assets_router, prefix="/api/v1")
 # New routes - Admin Dashboard
 app.include_router(admin_dashboard_router, prefix="/api/v1")
 
+# New routes - Custom MCP Connectors
+app.include_router(mcp_custom_router, prefix="/api/v1")
+
+# New routes - Custom Skills Management & Execution
+app.include_router(custom_skills_router, prefix="/api/v1")
+
+# Persistent User Skills System (Hugging Face Dataset storage)
+app.include_router(persistent_skills_router, prefix="/api/v1")
+
 
 # -----------------------------------------------------------------------------
 # Health / Ready / Root
@@ -212,6 +230,6 @@ async def home():
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 8000))
+    port = settings.get_runtime_port()
     uvicorn.run(app, host="0.0.0.0", port=port)
 

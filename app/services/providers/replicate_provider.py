@@ -13,6 +13,7 @@ class ReplicateProvider:
             2: settings.REPLICATE_API_KEY_TIER2,
             3: settings.REPLICATE_API_KEY_TIER3,
             4: settings.REPLICATE_API_KEY_TIER4,
+            5: settings.REPLICATE_API_KEY_TIER5,
         }
         return keys.get(tier) or ""
 
@@ -20,7 +21,7 @@ class ReplicateProvider:
     async def run_model(owner: str, name: str, input_data: dict, starting_tier: int) -> Any:
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None
-            for tier in range(starting_tier, 5):
+            for tier in range(starting_tier, 6):
                 api_key = ReplicateProvider.get_api_key(tier) or key_manager.get_key(service="image", provider="replicate")
                 if not api_key:
                     continue

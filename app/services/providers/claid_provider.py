@@ -20,7 +20,7 @@ class ClaidProvider:
 
     @staticmethod
     async def run_model(endpoint_path: str, payload: dict, starting_tier: int = 1) -> Any:
-        base_url = "https://api.claid.ai/v2"
+        base_url = "https://api.claid.ai/v1"
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             last_error = None

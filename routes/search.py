@@ -25,7 +25,11 @@ providers = {
     "nasa": NASAProvider(),
 }
 pm = ProviderManager(providers)
-cache = CacheService(config.CACHE_TYPE, config.REDIS_URL)
+cache = CacheService(
+    config.CACHE_TYPE,
+    config.REDIS_URL,
+    enabled=config.CACHE_ENABLED,
+)
 search_service = UnifiedSearchService(pm, cache)
 
 

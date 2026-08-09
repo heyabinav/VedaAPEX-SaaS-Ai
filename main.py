@@ -428,6 +428,12 @@ async def lifespan(app: FastAPI):
         f"Rate limit: {config.RATE_LIMIT_PER_SECOND} req/{config.RATE_LIMIT_WINDOW_SECONDS}s"
     )
 
+    try:
+        await search.cache.initialize()
+        logger.info("Cache initialized successfully")
+    except Exception as exc:
+        logger.warning(f"Cache initialization failed: {exc}")
+
     yield
 
     # Shutdown

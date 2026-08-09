@@ -98,6 +98,7 @@ class AIToolsService:
                 "together",
                 "fal",
                 "getimg",
+                "nvidia",
                 "bfl",
                 "replicate",
                 "free",

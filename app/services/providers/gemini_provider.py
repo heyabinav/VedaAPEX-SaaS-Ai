@@ -5,76 +5,64 @@ from ...core.config import settings
 
 class GeminiProvider:
     @staticmethod
-    def get_api_key() -> str:
-        """Get the Gemini API key from settings"""
-        return settings.GEMINI_API_KEY or ""
+    def get_api_key(tier: int = 1) -> str:
+        """Get the Gemini API key from settings for a specific tier or fallback to default key"""
+        keys = {
+            1: getattr(settings, "GEMINI_API_KEY_TIER1", None) or getattr(settings, "GEMINI_API_KEY", None),
+            2: getattr(settings, "GEMINI_API_KEY_TIER2", None),
+            3: getattr(settings, "GEMINI_API_KEY_TIER3", None),
+            4: getattr(settings, "GEMINI_API_KEY_TIER4", None),
+            5: getattr(settings, "GEMINI_API_KEY_TIER5", None),
+            6: getattr(settings, "GEMINI_API_KEY_TIER6", None),
+        }
+        return keys.get(tier) or getattr(settings, "GEMINI_API_KEY", "") or ""
 
     @staticmethod
-    async def run_model(model: str, input_data: dict) -> Any:
+    async def run_model(model: str, input_data: dict, starting_tier: int = 1) -> Any:
         """
-        Run a model using the Gemini API
-
-        Args:
-            model: The model name (e.g., "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash")
-            input_data: Dictionary containing the request data
-                - For text generation: {"contents": [{"parts": [{"text": "prompt"}]}]}
-                - Can also include system_instruction, generation_config, etc.
-
-        Returns:
-            The API response as a dictionary
+        Run a model using the Gemini API with tier fallback
         """
-        api_key = GeminiProvider.get_api_key()
-        if not api_key:
-            raise Exception("GEMINI_API_KEY is not configured")
-
         async with httpx.AsyncClient(timeout=120.0) as client:
-            # Gemini API endpoint
-            endpoint = (
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            )
-
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
             headers = {"Content-Type": "application/json"}
 
-            # Add API key as query parameter
-            params = {"key": api_key}
+            last_error = None
 
-            try:
-                response = await client.post(
-                    endpoint, headers=headers, json=input_data, params=params
-                )
+            for tier in range(starting_tier, 7):
+                api_key = GeminiProvider.get_api_key(tier)
+                if not api_key:
+                    continue
 
-                if response.status_code == 401:
-                    raise Exception(f"Gemini API: Invalid API key. Status: {response.status_code}")
-                elif response.status_code == 403:
-                    raise Exception(f"Gemini API: Access forbidden. Status: {response.status_code}")
-                elif response.status_code == 429:
-                    raise Exception(
-                        f"Gemini API: Rate limit exceeded. Status: {response.status_code}"
+                params = {"key": api_key}
+                try:
+                    response = await client.post(
+                        endpoint, headers=headers, json=input_data, params=params
                     )
-                elif response.status_code != 200:
-                    error_text = response.text
-                    raise Exception(f"Gemini API error: {response.status_code} - {error_text}")
 
-                return response.json()
+                    if response.status_code in (401, 403, 429):
+                        print(f"Gemini Tier {tier} exhausted or unauthorized ({response.status_code}). Switching to next tier...")
+                        last_error = f"Tier {tier}: {response.text}"
+                        continue
+                    if response.status_code != 200:
+                        raise Exception(f"Gemini API error ({response.status_code}): {response.text}")
 
-            except httpx.TimeoutException:
-                raise Exception("Gemini API request timed out")
-            except Exception as e:
-                print(f"Gemini API failed: {e}")
-                raise
+                    return response.json()
+
+                except httpx.TimeoutException:
+                    last_error = f"Tier {tier} timed out"
+                    print(f"Gemini Tier {tier} request timed out")
+                    continue
+                except Exception as e:
+                    last_error = str(e)
+                    print(f"Gemini Tier {tier} failed: {e}")
+                    continue
+
+            raise Exception(f"All Gemini tiers exhausted. Last error: {last_error}")
 
     @staticmethod
-    async def generate_text(prompt: str, model: str = "gemini-2.0-flash", **kwargs) -> str:
+    async def generate_text(prompt: str, model: str = "gemini-2.0-flash", starting_tier: int = 1, **kwargs) -> str:
         """
-        Convenience method for simple text generation
-
-        Args:
-            prompt: The text prompt
-            model: The model to use (default: gemini-2.0-flash)
-            **kwargs: Additional parameters for generation_config
-
-        Returns:
-            The generated text
+        Convenience method for simple text generation with tier fallback
         """
         generation_config = {
             "temperature": kwargs.get("temperature", 1),
@@ -88,13 +76,11 @@ class GeminiProvider:
             "generation_config": generation_config,
         }
 
-        # Add system instruction if provided
         if "system_instruction" in kwargs:
             request_body["system_instruction"] = {"parts": [{"text": kwargs["system_instruction"]}]}
 
-        response = await GeminiProvider.run_model(model, request_body)
+        response = await GeminiProvider.run_model(model, request_body, starting_tier=starting_tier)
 
-        # Extract the generated text from the response
         if "candidates" in response and len(response["candidates"]) > 0:
             candidate = response["candidates"][0]
             if "content" in candidate and "parts" in candidate["content"]:

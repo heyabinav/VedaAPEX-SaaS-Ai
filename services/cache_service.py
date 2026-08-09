@@ -91,13 +91,19 @@ class RedisCache(CacheBackend):
             import aioredis
 
             self.redis = await aioredis.from_url(self.redis_url)
+            await self.redis.ping()
             logger.info("Redis cache connected")
         except Exception as e:
             logger.error(f"Redis connection failed: {e}")
+            self.redis = None
             raise
 
     async def get(self, key: str) -> Optional[Any]:
         """Get from Redis."""
+        if not self.redis:
+            logger.debug("Redis cache not connected, cache MISS")
+            return None
+
         try:
             value = await self.redis.get(key)
             if value:
@@ -111,6 +117,10 @@ class RedisCache(CacheBackend):
 
     async def set(self, key: str, value: Any, ttl: int = 3600) -> None:
         """Set in Redis."""
+        if not self.redis:
+            logger.warning("Redis cache not connected, skipping SET")
+            return
+
         try:
             await self.redis.setex(key, ttl, json.dumps(value))
             logger.debug(f"Redis SET: {key} (TTL: {ttl}s)")
@@ -119,6 +129,10 @@ class RedisCache(CacheBackend):
 
     async def delete(self, key: str) -> None:
         """Delete from Redis."""
+        if not self.redis:
+            logger.warning("Redis cache not connected, skipping DELETE")
+            return
+
         try:
             await self.redis.delete(key)
         except Exception as e:
@@ -126,6 +140,10 @@ class RedisCache(CacheBackend):
 
     async def clear(self) -> None:
         """Clear Redis."""
+        if not self.redis:
+            logger.warning("Redis cache not connected, skipping CLEAR")
+            return
+
         try:
             await self.redis.flushdb()
         except Exception as e:
@@ -135,27 +153,59 @@ class RedisCache(CacheBackend):
 class CacheService:
     """Unified cache service."""
 
-    def __init__(self, backend_type: str = "memory", redis_url: str = None):
+    def __init__(
+        self,
+        backend_type: str = "memory",
+        redis_url: str = None,
+        enabled: bool = True,
+    ):
         """Initialize cache service."""
-        if backend_type == "redis" and redis_url:
-            self.backend = RedisCache(redis_url)
+        self.enabled = enabled
+        self.backend_type = backend_type
+        self.redis_url = redis_url
+        self.backend: Optional[CacheBackend] = None
+
+    async def initialize(self) -> None:
+        """Initialize the cache backend."""
+        if not self.enabled:
+            self.backend = None
+            logger.info("Cache is disabled")
+            return
+
+        if self.backend_type == "redis" and self.redis_url:
+            self.backend = RedisCache(self.redis_url)
+            try:
+                await self.backend.connect()
+            except Exception:
+                logger.warning(
+                    "Redis cache initialization failed; falling back to in-memory cache"
+                )
+                self.backend = InMemoryCache()
         else:
             self.backend = InMemoryCache()
 
     async def get(self, key: str) -> Optional[Any]:
         """Get from cache."""
+        if not self.backend:
+            return None
         return await self.backend.get(key)
 
     async def set(self, key: str, value: Any, ttl: int = 3600) -> None:
         """Set in cache."""
+        if not self.backend:
+            return
         await self.backend.set(key, value, ttl)
 
     async def delete(self, key: str) -> None:
         """Delete from cache."""
+        if not self.backend:
+            return
         await self.backend.delete(key)
 
     async def clear(self) -> None:
         """Clear cache."""
+        if not self.backend:
+            return
         await self.backend.clear()
 
     @staticmethod

@@ -50,17 +50,19 @@ class NVIDIAProvider:
                     response = await client.post(endpoint, headers=headers, json=payload)
                     if response.status_code in [401, 402, 403, 429]:
                         print(
-                            f"NVIDIA Tier {tier} exhausted ({response.status_code}). Switching..."
+                            f"[NVIDIA] Tier {tier} exhausted ({response.status_code}). Switching..."
                         )
                         last_error = f"Tier {tier}: {response.text}"
                         input_data["endpoint"] = endpoint  # Restore for next loop
                         continue
                     if response.status_code != 200:
-                        raise Exception(f"NVIDIA API error: {response.text}")
+                        raise Exception(
+                            f"[NVIDIA] API error (tier={tier}): {response.status_code} {response.text}"
+                        )
                     return response.json()
                 except Exception as e:
                     last_error = str(e)
-                    print(f"NVIDIA Tier {tier} failed: {e}")
+                    print(f"[NVIDIA] Tier {tier} failed: {e}")
                     input_data["endpoint"] = endpoint  # Restore for next loop
                     continue
-            raise Exception(f"All NVIDIA tiers exhausted. Last error: {last_error}")
+            raise Exception(f"[NVIDIA] All tiers exhausted. Last error: {last_error}")

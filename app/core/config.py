@@ -1,5 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -18,6 +20,12 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     CLAUDE_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    GEMINI_API_KEY_TIER1: Optional[str] = None
+    GEMINI_API_KEY_TIER2: Optional[str] = None
+    GEMINI_API_KEY_TIER3: Optional[str] = None
+    GEMINI_API_KEY_TIER4: Optional[str] = None
+    GEMINI_API_KEY_TIER5: Optional[str] = None
+    GEMINI_API_KEY_TIER6: Optional[str] = None
     DOCUMENT_COMPILER_KEY: Optional[str] = None
 
     # Replicate Tier Keys
@@ -25,6 +33,7 @@ class Settings(BaseSettings):
     REPLICATE_API_KEY_TIER2: Optional[str] = None
     REPLICATE_API_KEY_TIER3: Optional[str] = None
     REPLICATE_API_KEY_TIER4: Optional[str] = None
+    REPLICATE_API_KEY_TIER5: Optional[str] = None
 
     # Fal AI Tier Keys
     FAL_API_KEY_TIER1: Optional[str] = None
@@ -302,6 +311,16 @@ class Settings(BaseSettings):
     GROQ_API_KEY_TIER7: Optional[str] = None
     GROQ_API_KEY_TIER8: Optional[str] = None
     GROQ_API_KEY_TIER9: Optional[str] = None
+
+    # Mistral AI Tier Keys
+    MISTRAL_API_KEY_TIER1: Optional[str] = None
+    MISTRAL_API_KEY_TIER2: Optional[str] = None
+    MISTRAL_API_KEY_TIER3: Optional[str] = None
+    MISTRAL_API_KEY_TIER4: Optional[str] = None
+    MISTRAL_API_KEY_TIER5: Optional[str] = None
+    MISTRAL_API_KEY_TIER6: Optional[str] = None
+    MISTRAL_API_KEY_TIER7: Optional[str] = None
+    MISTRAL_API_KEY_TIER8: Optional[str] = None
 
     # Genspark Tier Keys
     GENSPARK_API_KEY_TIER1: Optional[str] = None
@@ -590,5 +609,38 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 150
     ALLOWED_UPLOAD_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.pdf,.docx,.xlsx,.pptx"
     ADMIN_IP_WHITELIST: Optional[str] = None
+    def get_runtime_port(self) -> int:
+        raw_port = os.getenv("PORT") or os.getenv("APP_PORT")
+        if raw_port:
+            try:
+                return int(raw_port)
+            except ValueError:
+                return 8000
+        return 8000
+
+    def get_allowed_origins(self) -> list[str]:
+        raw_origins = (
+            os.getenv("ALLOWED_ORIGINS")
+            or os.getenv("MEDIA_ALLOWED_ORIGINS")
+            or self.MEDIA_ALLOWED_ORIGINS
+            or "http://localhost:3000"
+        )
+        return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+    def validate_runtime_environment(self) -> list[str]:
+        warnings: list[str] = []
+        env_name = (os.getenv("APP_ENV") or self.APP_ENV or "development").lower()
+
+        if not self.SECRET_KEY or self.SECRET_KEY.startswith("SUPER_SECRET_KEY_CHANGE_ME_IN_PRODUCTION"):
+            warnings.append("SECRET_KEY is not configured for production use.")
+
+        if not self.DATABASE_URL or self.DATABASE_URL == "sqlite:///./vedaapex.db":
+            warnings.append("DATABASE_URL is still using the default SQLite configuration.")
+
+        if env_name == "production":
+            if not (self.SUPABASE_URL and (self.SUPABASE_KEY or self.SUPABASE_SERVICE_ROLE_KEY)):
+                warnings.append("Supabase auth credentials are not fully configured.")
+
+        return warnings
 
 settings = Settings()

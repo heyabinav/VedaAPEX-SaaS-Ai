@@ -24,6 +24,8 @@ class GroqProvider:
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None
             endpoint = input_data.pop("endpoint", "https://api.groq.com/openai/v1/chat/completions")
+            if endpoint.endswith("/chat/completions"):
+                endpoint = endpoint.rstrip("/")
 
             for tier in range(starting_tier, 10):
                 api_key = GroqProvider.get_api_key(tier)

@@ -21,7 +21,7 @@ class FotorProvider:
 
     @staticmethod
     async def run_model(input_data: dict, starting_tier: int) -> Any:
-        submit_endpoint = "https://api-b.fotor.com/v1/aiart/text2img"
+        submit_endpoint = "https://api-b.fotor.com/v1/aiart/generate"
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None

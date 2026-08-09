@@ -22,7 +22,7 @@ class PixverseProvider:
     async def run_model(input_data: dict, starting_tier: int) -> Any:
         # Example Pixverse API integration
         # Replace the endpoint with the actual Pixverse API endpoint if necessary
-        endpoint = "https://app.pixverse.ai/api/v1/video/generate"  # Or specific platform API
+        endpoint = "https://api.pixverse.ai/v1/generate"  # Updated public-facing endpoint fallback
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None
