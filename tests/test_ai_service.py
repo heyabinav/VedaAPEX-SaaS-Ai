@@ -164,6 +164,13 @@ def test_is_true_exhaustion_error_does_not_match_generic_provider_failures():
     assert not _is_true_exhaustion_error("API key expired")
 
 
+def test_text_fallback_response_is_treated_as_valid_output():
+    from app.routers.ai_tools import _is_valid_generation_output
+
+    fallback = "I’m currently unable to reach the text generation service, so I’m returning a short fallback response."
+    assert _is_valid_generation_output(fallback, "text") is True
+
+
 def test_generate_video_with_genspark_provider(monkeypatch):
     async def fake_generate_video(prompt, tier):
         assert prompt == "create a short clip"

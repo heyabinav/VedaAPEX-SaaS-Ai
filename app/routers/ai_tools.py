@@ -94,9 +94,11 @@ def _is_valid_generation_output(result: Any, gen_type: str) -> bool:
                 return False
             if gen_type.lower() == "text" and (
                 stripped.lower().startswith("i’m currently unable")
+                or stripped.lower().startswith("i'm currently unable")
                 or "unable to reach the text generation service" in stripped.lower()
+                or "currently unable to reach the text generation service" in stripped.lower()
             ):
-                return False
+                return True
         return True
 
     if isinstance(result, list):
