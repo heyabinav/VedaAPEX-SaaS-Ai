@@ -118,6 +118,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Ensure the deployed Render hostname is reachable by default.
+if not settings.APP_BASE_URL:
+    settings.APP_BASE_URL = settings.get_app_base_url()
+if not settings.FRONTEND_BASE_URL:
+    settings.FRONTEND_BASE_URL = settings.get_frontend_base_url()
+
 # -----------------------------------------------------------------------------
 # Register centralized error handlers
 # -----------------------------------------------------------------------------

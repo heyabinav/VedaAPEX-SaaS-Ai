@@ -23,3 +23,20 @@ def test_runtime_validation_warns_in_development_without_raising(monkeypatch):
 
     assert warnings
     assert any("SECRET_KEY" in warning for warning in warnings)
+
+
+def test_deployment_alias_env_vars_are_resolved(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setenv("JWT_ACCESS_SECRET", "deploy-secret")
+    monkeypatch.setenv("NODE_ENV", "production")
+    monkeypatch.setenv("R2_BUCKET", "media-bucket")
+    monkeypatch.setenv("R2_ENDPOINT", "https://r2.example.com")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+
+    settings = Settings()
+
+    assert settings.SECRET_KEY == "deploy-secret"
+    assert settings.APP_ENV == "production"
+    assert settings.R2_BUCKET_NAME == "media-bucket"
+    assert settings.R2_ENDPOINT_URL == "https://r2.example.com"
+    assert settings.SUPABASE_KEY == "anon-key"

@@ -565,6 +565,29 @@ class Settings(BaseSettings):
     APP_BASE_URL: Optional[str] = None
     FRONTEND_BASE_URL: Optional[str] = None
 
+    def get_app_base_url(self) -> str:
+        env_value = (
+            os.getenv("APP_BASE_URL")
+            or os.getenv("BASE_URL")
+            or os.getenv("PUBLIC_BASE_URL")
+            or self.APP_BASE_URL
+            or os.getenv("RENDER_EXTERNAL_URL")
+            or os.getenv("RENDER_URL")
+        )
+        if env_value:
+            return env_value.rstrip("/")
+        return "https://vedaapex-saas-ai.onrender.com"
+
+    def get_frontend_base_url(self) -> str:
+        env_value = (
+            os.getenv("FRONTEND_BASE_URL")
+            or os.getenv("FRONTEND_URL")
+            or self.FRONTEND_BASE_URL
+        )
+        if env_value:
+            return env_value.rstrip("/")
+        return "https://vedaapex-saas-ai.onrender.com"
+
     # Session Cookie Configuration
     SESSION_COOKIE_NAME: str = "vedaapex_session"
     SESSION_COOKIE_MAX_AGE: int = 60 * 60 * 24 * 30  # 30 days
@@ -609,6 +632,41 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 150
     ALLOWED_UPLOAD_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.pdf,.docx,.xlsx,.pptx"
     ADMIN_IP_WHITELIST: Optional[str] = None
+    def __init__(self, **values):
+        env = os.environ
+
+        if "SECRET_KEY" not in values and not values.get("SECRET_KEY") and not env.get("SECRET_KEY"):
+            alias = env.get("JWT_ACCESS_SECRET") or env.get("JWT_SECRET")
+            if alias:
+                values["SECRET_KEY"] = alias
+
+        if "APP_ENV" not in values and not values.get("APP_ENV") and not env.get("APP_ENV"):
+            alias = env.get("NODE_ENV")
+            if alias:
+                values["APP_ENV"] = alias
+
+        if "R2_BUCKET_NAME" not in values and not values.get("R2_BUCKET_NAME") and not env.get("R2_BUCKET_NAME"):
+            alias = env.get("R2_BUCKET")
+            if alias:
+                values["R2_BUCKET_NAME"] = alias
+
+        if "R2_ENDPOINT_URL" not in values and not values.get("R2_ENDPOINT_URL") and not env.get("R2_ENDPOINT_URL"):
+            alias = env.get("R2_ENDPOINT")
+            if alias:
+                values["R2_ENDPOINT_URL"] = alias
+
+        if "SUPABASE_KEY" not in values and not values.get("SUPABASE_KEY") and not env.get("SUPABASE_KEY"):
+            alias = env.get("SUPABASE_ANON_KEY")
+            if alias:
+                values["SUPABASE_KEY"] = alias
+
+        if "DATABASE_URL" not in values and not values.get("DATABASE_URL") and not env.get("DATABASE_URL"):
+            alias = env.get("POSTGRES_URL") or env.get("PG_URL")
+            if alias:
+                values["DATABASE_URL"] = alias
+
+        super().__init__(**values)
+
     def get_runtime_port(self) -> int:
         raw_port = os.getenv("PORT") or os.getenv("APP_PORT")
         if raw_port:
@@ -625,7 +683,11 @@ class Settings(BaseSettings):
             or self.MEDIA_ALLOWED_ORIGINS
             or "http://localhost:3000"
         )
-        return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+        if not os.getenv("ALLOWED_ORIGINS") and not os.getenv("MEDIA_ALLOWED_ORIGINS"):
+            if not any(origin.endswith("vedaapex-saas-ai.onrender.com") for origin in origins):
+                origins.append("https://vedaapex-saas-ai.onrender.com")
+        return origins
 
     def validate_runtime_environment(self) -> list[str]:
         warnings: list[str] = []
