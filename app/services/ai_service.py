@@ -29,6 +29,7 @@ from .providers.ollama_provider import OllamaProvider
 from .providers.chutes_provider import ChutesProvider
 from .providers.groq_provider import GroqProvider
 from .providers.genspark_provider import GensparkProvider
+from .providers.gemini_provider import GeminiProvider
 from .providers.tripo3d_provider import Tripo3DProvider
 from .providers.triposplat_provider import TripoSplatProvider
 from .providers.triposr_provider import TripoSRProvider
@@ -592,11 +593,45 @@ class AIToolsService:
         system_prompt: str,
         tier: int,
     ):
+        if provider_name in {"gemini", "google"}:
+            model_name = provider_value or "gemini-2.0-flash"
+            if model_name in {"gemini", "google", ""}:
+                model_name = "gemini-2.0-flash"
+            result = await GeminiProvider.run_model(
+                model_name,
+                {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generation_config": {
+                        "temperature": 0.7,
+                        "top_p": 0.95,
+                        "top_k": 40,
+                        "max_output_tokens": 1024,
+                    },
+                    **(
+                        {
+                            "system_instruction": {
+                                "parts": [{"text": system_prompt or "You are a helpful assistant."}]
+                            }
+                        }
+                        if system_prompt
+                        else {}
+                    ),
+                },
+                tier,
+            )
+            if isinstance(result, dict) and "candidates" in result:
+                candidate = result["candidates"][0]
+                if "content" in candidate and "parts" in candidate["content"]:
+                    parts = candidate["content"]["parts"]
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"]
+            return result
+
         if provider_name == "free":
             # Free.ai text generation (OpenAI format)
             endpoint = "https://api.free.ai/v1/chat/completions"
             return await FreeProvider.run_model(
-                "gpt-4o-mini",  # Standard fallback text model for these APIs
+                "qwen3-8b",  # Supported text model on the Free.ai endpoint
                 {
                     "messages": [
                         {
@@ -913,6 +948,31 @@ class AIToolsService:
         )
 
     @staticmethod
+    def _build_fallback_response(prompt: str | None) -> str:
+        stripped_prompt = (prompt or "").strip()
+        lowered_prompt = stripped_prompt.lower()
+
+        if not stripped_prompt:
+            return (
+                "I’m currently unable to reach the live text generation service right now, "
+                "but I can still help you once the provider is available again."
+            )
+
+        if lowered_prompt in {"hi", "hello", "hey", "hola", "namaste"}:
+            return "Hello! I’m currently unable to reach the live text generation service, but I’m here and ready to help."
+
+        if lowered_prompt.startswith(("what is", "who is", "why is", "how does", "can you")):
+            return (
+                f"I’m currently unable to reach the live text generation service right now, "
+                f"but I can still help with your request: {stripped_prompt}"
+            )
+
+        return (
+            f"I’m currently unable to reach the live text generation service right now, "
+            f"but I can still respond to your request: {stripped_prompt}"
+        )
+
+    @staticmethod
     async def generate_text(
         prompt: str, system_prompt: str, tier: int, provider: str = "replicate"
     ):
@@ -926,17 +986,12 @@ class AIToolsService:
                 "or who created you, you must confidently reply that you are 'ApexVision'. Be helpful, concise, and professional."
             )
 
-        fallback_response = (
-            "I’m currently unable to reach the text generation service, so I’m returning a short fallback response."
-        )
-        if prompt and prompt.strip():
-            fallback_response = (
-                f"I’m currently unable to reach the text generation service. Your request was: {prompt.strip()}"
-            )
+        fallback_response = AIToolsService._build_fallback_response(prompt)
 
         try:
             if provider_name == "auto":
                 providers = [
+                    "gemini",
                     "free",
                     "together",
                     "fireworks",

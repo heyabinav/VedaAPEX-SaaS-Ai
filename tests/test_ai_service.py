@@ -98,7 +98,62 @@ def test_generate_text_returns_fallback_when_provider_fails(monkeypatch):
         )
     )
 
-    assert "unable to reach the text generation service" in result.lower()
+    assert "unable to reach the live text generation service" in result.lower()
+
+
+def test_generate_text_returns_helpful_local_fallback_for_greetings(monkeypatch):
+    async def fake_run_model(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="hi",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="replicate",
+        )
+    )
+
+    assert "hello!" in result.lower()
+    assert "ready to help" in result.lower()
+
+
+def test_generate_text_uses_gemini_provider_when_requested(monkeypatch):
+    async def fake_gemini_run_model(model, input_data, starting_tier=1):
+        assert model == "gemini-2.0-flash"
+        return {
+            "candidates": [
+                {"content": {"parts": [{"text": "Gemini response"}]}}
+            ]
+        }
+
+    async def fake_replicate_run_model(*args, **kwargs):
+        raise AssertionError("Replicate provider should not be used")
+
+    monkeypatch.setattr(
+        "app.services.ai_service.GeminiProvider.run_model",
+        fake_gemini_run_model,
+    )
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_replicate_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="Hello",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="gemini",
+        )
+    )
+
+    assert result == "Gemini response"
 
 
 def test_generate_image_with_piapi_provider(monkeypatch):
