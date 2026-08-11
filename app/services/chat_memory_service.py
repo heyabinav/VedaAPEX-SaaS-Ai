@@ -15,6 +15,7 @@ from app.models.chat_session import ChatSession
 from app.models.user import User
 from app.services.ai_service import AIToolsService
 from app.services.hf_storage.chat import HFChatStorageService
+from app.services.supabase_service import SupabaseService
 import logging
 
 logger = logging.getLogger("services.chat_memory_service")
@@ -164,6 +165,30 @@ class ChatMemoryService:
                 + "\n".join(f"{m['role']}: {m['content']}" for m in context_messages)
                 + f"\n\nCurrent user message:\n{message}"
             )
+
+        user_profile_facts = await SupabaseService.get_user_profile_facts(str(user.id))
+        if user_profile_facts:
+            profile_lines = []
+            if user_profile_facts.get("full_name"):
+                profile_lines.append(f"User: {user_profile_facts['full_name']} ({user.email})")
+            facts = []
+            for key, label in [
+                ("hometown", "hometown"),
+                ("favorite_color", "favorite_color"),
+                ("gf_name", "gf_name"),
+                ("extra_notes", "notes"),
+            ]:
+                value = user_profile_facts.get(key)
+                if value:
+                    facts.append(f"{label}={value}")
+            if facts:
+                profile_lines.append(
+                    "Known facts about the user: " + ", ".join(facts)
+                )
+            profile_lines.append(
+                "Instruction: Sirf inhi diye gaye facts ka use karo. Koi bhi fact jo yahan nahi diya gaya hai, use mat banao ya guess mat karo."
+            )
+            system_prompt = system_prompt + "\n\n" + "\n".join(profile_lines)
 
         answer = await AIToolsService.generate_text(
             prompt=prompt,

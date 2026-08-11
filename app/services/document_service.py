@@ -10,6 +10,7 @@ from pptx import Presentation
 from docx import Document
 from openpyxl import Workbook
 from app.core.config import settings
+from app.storage.storage_manager import storage_manager
 
 
 class DocumentService:
@@ -50,6 +51,16 @@ class DocumentService:
                 status_code=500,
                 detail=f"Failed to parse structured JSON from compiler: {e}",
             )
+
+    @staticmethod
+    def _save_generated_file(filename: str, file_path: str, base_url: str) -> str:
+        """Store a generated file through the app storage manager and return a full public URL."""
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=500, detail=f"Generated file not found: {file_path}")
+        public_path = storage_manager.upload_file(file_path, filename)
+        if public_path.startswith("http"):
+            return public_path
+        return f"{base_url.rstrip('/')}{public_path}"
 
     # =========================================================================
     #  Provider-specific content generators
@@ -252,7 +263,7 @@ class DocumentService:
         file_path = os.path.join("static/generated", filename)
         prs.save(file_path)
 
-        return f"{base_url}static/generated/{filename}"
+        return DocumentService._save_generated_file(filename, file_path, base_url)
 
     @staticmethod
     async def generate_word(
@@ -290,7 +301,7 @@ class DocumentService:
         file_path = os.path.join("static/generated", filename)
         doc.save(file_path)
 
-        return f"{base_url}static/generated/{filename}"
+        return DocumentService._save_generated_file(filename, file_path, base_url)
 
     @staticmethod
     async def generate_excel(
@@ -335,7 +346,7 @@ class DocumentService:
         file_path = os.path.join("static/generated", filename)
         wb.save(file_path)
 
-        return f"{base_url}static/generated/{filename}"
+        return DocumentService._save_generated_file(filename, file_path, base_url)
 
     # =========================================================================
     #  PDF Document Generator (fpdf2 – Professional Indigo Theme)
@@ -470,4 +481,4 @@ class DocumentService:
         file_path = os.path.join("static/generated", filename)
         pdf.output(file_path)
 
-        return f"{base_url}static/generated/{filename}"
+        return DocumentService._save_generated_file(filename, file_path, base_url)

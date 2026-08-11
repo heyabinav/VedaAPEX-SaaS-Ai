@@ -67,11 +67,6 @@ async def connector_callback(
     if not conn:
         raise HTTPException(status_code=404, detail=f"Unknown connector: {provider}")
 
-    from app.helpers.token_helper import get_user_token
-
-    with _get_session() as session:
-        state_record = get_user_token(0, f"{provider}_state", session=session)
-
     from app.helpers.token_helper import _decrypt_text as _dt
     from sqlmodel import select
     from app.models.user_oauth_tokens import UserOAuthToken
@@ -81,14 +76,25 @@ async def connector_callback(
             select(UserOAuthToken).where(
                 UserOAuthToken.platform == f"{provider}_state",
             )
-        ).first()
+        ).all()
+
         if not record:
             raise HTTPException(status_code=400, detail="Invalid OAuth state - please try again")
-        real_state = _dt(record.access_token) if record.access_token else ""
-        user_id = record.user_id
 
-    if state != real_state:
-        raise HTTPException(status_code=400, detail="Invalid OAuth state")
+        matched_record = None
+        for row in record:
+            if row.access_token:
+                try:
+                    if state == _dt(row.access_token):
+                        matched_record = row
+                        break
+                except Exception:
+                    continue
+
+        if not matched_record:
+            raise HTTPException(status_code=400, detail="Invalid OAuth state")
+
+        user_id = matched_record.user_id
 
     try:
         tokens = await conn.exchange_code(code)

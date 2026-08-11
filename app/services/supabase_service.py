@@ -240,6 +240,10 @@ class SupabaseService:
         user = session.exec(select(User).where(User.email == email)).first()
         created = False
 
+        provider_id = supabase_user.get("id") or supabase_user.get("sub")
+        if provider_id is not None:
+            provider_id = str(provider_id)
+
         if not user:
             created = True
             referral_code = f"VEDA{uuid.uuid4().hex[:8].upper()}"
@@ -256,6 +260,7 @@ class SupabaseService:
                 referred_by=referral_code_input,
                 role="USER",
                 last_login_at=utcnow(),
+                provider_id=provider_id,
             )
             session.add(user)
             try:
@@ -286,6 +291,8 @@ class SupabaseService:
         else:
             if full_name and user.full_name != full_name:
                 user.full_name = full_name
+            if provider_id and user.provider_id != provider_id:
+                user.provider_id = provider_id
             user.last_login_at = utcnow()
             session.add(user)
             session.commit()
@@ -293,3 +300,49 @@ class SupabaseService:
             logger.info("Existing user found user_id=%s", user.id)
 
         return user, created
+
+    @staticmethod
+    async def get_user_profile_facts(user_id: str) -> dict[str, str]:
+        """Fetch user profile facts from Supabase public.profiles for the given user UUID."""
+        if not SupabaseService.is_configured() or not user_id:
+            return {}
+
+        if not isinstance(user_id, str):
+            user_id = str(user_id)
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.SUPABASE_TIMEOUT_SECONDS) as client:
+                response = await client.get(
+                    f"{SupabaseService._base_url()}/rest/v1/profiles",
+                    headers=SupabaseService._headers(),
+                    params={
+                        "id": f"eq.{user_id}",
+                        "select": "full_name,gf_name,hometown,favorite_color,extra_notes",
+                    },
+                )
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Failed to fetch Supabase profile facts for user_id=%s: %s",
+                user_id,
+                exc,
+            )
+            return {}
+
+        if response.status_code != 200:
+            logger.warning(
+                "Supabase profile facts request for user_id=%s returned status=%s",
+                user_id,
+                response.status_code,
+            )
+            return {}
+
+        data = SupabaseService._safe_json(response)
+        if isinstance(data, list) and data:
+            return {
+                key: value
+                for key, value in data[0].items()
+                if key in {"full_name", "gf_name", "hometown", "favorite_color", "extra_notes"}
+                and value is not None
+                and str(value).strip()
+            }
+        return {}
