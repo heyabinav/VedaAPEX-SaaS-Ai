@@ -43,6 +43,7 @@ SESSION_COOKIE_SECURE = (
 )
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", settings.SESSION_COOKIE_SAMESITE)
+OAUTH_VERIFIER_COOKIE_NAME = "vedaapex_oauth_verifier"
 
 SUPABASE_URL = (os.getenv("SUPABASE_URL") or settings.SUPABASE_URL or "").rstrip("/")
 SUPABASE_SERVICE_KEY = (
@@ -52,8 +53,8 @@ SUPABASE_SERVICE_KEY = (
     or settings.SUPABASE_KEY
     or ""
 )
-FRONTEND_URL = os.getenv("FRONTEND_URL") or settings.FRONTEND_BASE_URL or ""
-APP_BASE_URL = os.getenv("APP_BASE_URL") or settings.APP_BASE_URL or ""
+FRONTEND_URL = os.getenv("FRONTEND_URL") or os.getenv("FRONTEND_BASE_URL") or settings.get_frontend_base_url() or ""
+APP_BASE_URL = os.getenv("APP_BASE_URL") or os.getenv("BASE_URL") or settings.get_app_base_url() or ""
 
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID") or os.getenv("GITHUB_OAUTH_CLIENT_ID") or settings.GITHUB_OAUTH_CLIENT_ID or ""
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET") or os.getenv("GITHUB_OAUTH_CLIENT_SECRET") or settings.GITHUB_OAUTH_CLIENT_SECRET or ""
@@ -325,6 +326,48 @@ def _wants_json_response(request: Request) -> bool:
     return False
 
 
+def _extract_pkce_verifier(client) -> Optional[str]:
+    try:
+        storage = getattr(client.auth, "_storage", None)
+        if storage is None:
+            return None
+        storage_key = getattr(client.auth, "_storage_key", "supabase.auth.token")
+        verifier = storage.get_item(f"{storage_key}-code-verifier")
+        return str(verifier) if verifier else None
+    except Exception:
+        return None
+
+
+def _set_pkce_verifier_cookie(response: Response, verifier: Optional[str]) -> None:
+    if not verifier:
+        return
+    response.set_cookie(
+        key=OAUTH_VERIFIER_COOKIE_NAME,
+        value=verifier,
+        max_age=600,
+        secure=SESSION_COOKIE_SECURE,
+        httponly=True,
+        samesite=SESSION_COOKIE_SAMESITE,
+        path="/",
+    )
+
+
+def _get_pkce_verifier(request: Request) -> Optional[str]:
+    verifier = request.cookies.get(OAUTH_VERIFIER_COOKIE_NAME)
+    if verifier:
+        return verifier
+
+    code_verifier = request.query_params.get("code_verifier")
+    if code_verifier:
+        return code_verifier
+
+    state_value = request.query_params.get("state") or ""
+    if state_value.startswith("cv:"):
+        return state_value.partition(":")[2]
+
+    return None
+
+
 async def _start_oauth_login(request: Request, provider: str) -> Response:
     try:
         client = _get_supabase_client()
@@ -341,8 +384,10 @@ async def _start_oauth_login(request: Request, provider: str) -> Response:
         if not login_url:
             raise HTTPException(status_code=500, detail="Failed to generate OAuth URL")
 
+        verifier = _extract_pkce_verifier(client)
+
         if _wants_json_response(request):
-            return JSONResponse(
+            resp = JSONResponse(
                 {
                     "success": True,
                     "provider": provider,
@@ -350,8 +395,12 @@ async def _start_oauth_login(request: Request, provider: str) -> Response:
                     "redirect": False,
                 }
             )
+            _set_pkce_verifier_cookie(resp, verifier)
+            return resp
 
-        return RedirectResponse(url=login_url, status_code=302)
+        resp = RedirectResponse(url=login_url, status_code=302)
+        _set_pkce_verifier_cookie(resp, verifier)
+        return resp
     except HTTPException:
         raise
     except Exception as exc:
@@ -459,10 +508,25 @@ async def auth_callback(
         detected_provider = (provider or _provider_from_state(state) or "").lower() or None
         client = _get_supabase_client()
 
-        try:
-            exchange_result = client.auth.exchange_code_for_session({"auth_code": code})
-        except TypeError:
-            exchange_result = client.auth.exchange_code_for_session(code)
+        pkce_verifier = _get_pkce_verifier(request)
+
+        exchange_result = None
+        if pkce_verifier:
+            try:
+                exchange_result = client.auth.exchange_code_for_session(
+                    {
+                        "auth_code": code,
+                        "code_verifier": pkce_verifier,
+                        "redirect_to": _backend_callback_url(request, detected_provider or "google"),
+                    }
+                )
+            except (TypeError, AttributeError):
+                pass
+        if exchange_result is None:
+            try:
+                exchange_result = client.auth.exchange_code_for_session({"auth_code": code})
+            except (TypeError, AttributeError):
+                exchange_result = client.auth.exchange_code_for_session(code)
 
         user_payload, session_payload, access_token = _extract_session_payload(exchange_result)
         if not access_token and isinstance(exchange_result, dict):
@@ -510,6 +574,7 @@ async def auth_callback(
             samesite=SESSION_COOKIE_SAMESITE,
             path="/",
         )
+        response.delete_cookie(key=OAUTH_VERIFIER_COOKIE_NAME, path="/")
         logger.info(
             "OAuth success user_id=%s provider=%s email=%s",
             local_user.id,
