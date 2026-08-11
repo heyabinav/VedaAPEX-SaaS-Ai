@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
-from app.db.session import get_session
+from app.db.session import get_session, get_session_context as _get_session
 from app.models.user import User
 from app.models.user_oauth_tokens import UserOAuthToken
 from app.routers.auth import get_current_user_auth
@@ -47,7 +47,6 @@ async def google_callback(
     try:
         token_data = await exchange_code(code)
 
-        from app.db.session import get_session as _get_session
         with _get_session() as session:
             store_token(user_id, token_data, session)
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session
 
 from app.db.session import get_session
+from app.db.session import get_session_context as _get_session
 from app.models.user import User
 from app.routers.auth import get_current_user_auth
 from app.connectors.registry import connector_registry
@@ -44,7 +45,6 @@ async def connector_login(
     auth_url = conn.build_authorization_url(state)
 
     from app.helpers.token_helper import save_user_token
-    from app.db.session import get_session as _get_session
     with _get_session() as session:
         save_user_token(current_user.id, f"{provider}_state", state, None, session=session)
 
@@ -68,7 +68,6 @@ async def connector_callback(
         raise HTTPException(status_code=404, detail=f"Unknown connector: {provider}")
 
     from app.helpers.token_helper import get_user_token
-    from app.db.session import get_session as _get_session
 
     with _get_session() as session:
         state_record = get_user_token(0, f"{provider}_state", session=session)

@@ -11,6 +11,7 @@ Key fixes:
 
 import logging
 import os
+from contextlib import contextmanager
 
 from fastapi import HTTPException
 from sqlalchemy import inspect, text
@@ -171,15 +172,15 @@ def _ensure_missing_user_columns() -> None:
     _ensure_missing_schema_columns()
 
 
-def get_session():
+def _open_session():
     try:
-        session = Session(engine)
+        return Session(engine)
     except OperationalError as exc:
         if not _database_url.startswith("sqlite"):
             logger.warning("Database session creation failed, retrying with local SQLite fallback: %s", exc)
             _fallback_to_sqlite()
             try:
-                session = Session(engine)
+                return Session(engine)
             except OperationalError as fallback_exc:
                 logger.exception("Failed to create database session after SQLite fallback")
                 detail = "Database service unavailable. Please try again later."
@@ -199,6 +200,17 @@ def get_session():
             detail = f"Database error occurred: {exc}"
         raise HTTPException(status_code=503, detail=detail) from exc
 
+
+def _close_session(session: Session):
+    try:
+        session.close()
+    except Exception:
+        logger.exception("Failed to close database session")
+
+
+@contextmanager
+def get_session_context():
+    session = _open_session()
     try:
         yield session
     except OperationalError as exc:
@@ -214,5 +226,25 @@ def get_session():
             detail = f"Database error occurred: {exc}"
         raise HTTPException(status_code=503, detail=detail) from exc
     finally:
-        session.close()
+        _close_session(session)
+
+
+def get_session():
+    session = _open_session()
+    try:
+        yield session
+    except OperationalError as exc:
+        logger.exception("Database operational error during request handling")
+        detail = "Database service unavailable. Please try again later."
+        if settings.APP_ENV != "production":
+            detail = f"Database service unavailable: {exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Database error during request handling", exc_info=True)
+        detail = "Database error occurred. Please contact support."
+        if settings.APP_ENV != "production":
+            detail = f"Database error occurred: {exc}"
+        raise HTTPException(status_code=503, detail=detail) from exc
+    finally:
+        _close_session(session)
 
