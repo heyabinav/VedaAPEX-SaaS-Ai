@@ -114,3 +114,9 @@ app/uploads/
 # Ignore temporary directory causing permission warnings during git status 
 tmpzd1a0tob/ 
 # Ignore temporary directory causing permission warnings during git status
+
+# Secrets
+user_keys.env
+scripts/routes_out.txt
+scripts/dbg.txt
+scripts/routes_err.txt

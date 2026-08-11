@@ -168,6 +168,8 @@ app.mount("/api/v1/media/download", StaticFiles(directory=uploads_dir), name="me
 # Core routers
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(ai_tools_router, prefix="/api/v1")
+# Compatibility alias for ai routes used by docs/examples
+app.include_router(ai_tools_router)
 app.include_router(admin_router, prefix="/api/v1")
 app.include_router(generation_router, prefix="/api/v1")
 app.include_router(promo_router, prefix="/api/v1")

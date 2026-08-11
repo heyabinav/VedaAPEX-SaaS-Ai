@@ -71,7 +71,7 @@ def call_backend_image_endpoint(
     tier: int = 1,
     provider: str = "nvidia",
 ):
-    endpoint = urllib.parse.urljoin(base_url, "/api/v1/generate/image")
+    endpoint = urllib.parse.urljoin(base_url, "/api/v1/ai/generate/image")
     payload = {
         "prompt": prompt,
         "aspect_ratio": "16:9",
