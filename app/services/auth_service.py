@@ -79,7 +79,7 @@ class AuthService:
         if not credentials:
             raise HTTPException(
                 status_code=401,
-                detail="Authentication required. Supply a Supabase Bearer token or x-api-key.",
+                detail="Login required. Supply a Supabase Bearer token or x-api-key.",
             )
 
         # 3) Verify with Supabase
