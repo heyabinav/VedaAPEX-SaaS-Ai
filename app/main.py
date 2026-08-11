@@ -56,6 +56,7 @@ from app.routers.admin_dashboard import router as admin_dashboard_router
 from app.routers.mcp_custom import router as mcp_custom_router
 from app.routers.custom_skills import router as custom_skills_router
 from app.routers.persistent_skills import router as persistent_skills_router
+from app.routers.website import router as website_router
 
 # Configure structured logging
 setup_logging(env=settings.APP_ENV)
@@ -208,6 +209,9 @@ app.include_router(custom_skills_router, prefix="/api/v1")
 
 # Persistent User Skills System (Hugging Face Dataset storage)
 app.include_router(persistent_skills_router, prefix="/api/v1")
+
+# Website requirements questionnaire endpoint
+app.include_router(website_router)
 
 
 # -----------------------------------------------------------------------------

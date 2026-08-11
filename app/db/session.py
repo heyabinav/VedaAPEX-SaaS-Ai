@@ -92,6 +92,7 @@ def init_db():
     import app.models.chat_message  # noqa: F401  # Chat messages for memory-aware assistant
     import app.models.mcp_connector  # noqa: F401  # Custom MCP connectors & OAuth tables
     import app.models.custom_skill  # noqa: F401  # User Custom Skills table
+    import app.models.website_requirement  # noqa: F401  # Website requirements questionnaire entries
 
     # Log all registered SQLModel tables for startup diagnostics
     registered_tables = sorted(SQLModel.metadata.tables.keys())

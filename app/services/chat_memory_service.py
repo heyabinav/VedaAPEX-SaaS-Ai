@@ -141,7 +141,7 @@ class ChatMemoryService:
         if session_id:
             chat_session = ChatMemoryService.get_session(session, user, session_id)
         else:
-            chat_session = ChatMemoryService.create_session(session, user, title=message)
+            chat_session = ChatMemoryService.create_session(session, user)
             session_id = chat_session.id
 
         past_messages = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit)
@@ -164,6 +164,11 @@ class ChatMemoryService:
                 "Conversation context:\n"
                 + "\n".join(f"{m['role']}: {m['content']}" for m in context_messages)
                 + f"\n\nCurrent user message:\n{message}"
+            )
+            system_prompt = (
+                system_prompt
+                + "\n\nAnalyze the user’s latest request in the context of previous conversation and answer accordingly. "
+                + "If the user asks about their name or account, use the logged-in identity."
             )
 
         user_profile_facts = await SupabaseService.get_user_profile_facts(str(user.id))
