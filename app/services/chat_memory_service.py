@@ -167,10 +167,18 @@ class ChatMemoryService:
             )
 
         user_profile_facts = await SupabaseService.get_user_profile_facts(str(user.id))
+
+        identity_lines = []
+        if user.full_name and user.full_name.strip():
+            identity_lines.append(f"Logged in as: {user.full_name.strip()} ({user.email})")
+        else:
+            identity_lines.append(f"Logged in as: {user.email}")
+
         if user_profile_facts:
-            profile_lines = []
             if user_profile_facts.get("full_name"):
-                profile_lines.append(f"User: {user_profile_facts['full_name']} ({user.email})")
+                identity_lines = [
+                    f"Logged in as: {user_profile_facts['full_name']} ({user.email})"
+                ]
             facts = []
             for key, label in [
                 ("hometown", "hometown"),
@@ -182,13 +190,14 @@ class ChatMemoryService:
                 if value:
                     facts.append(f"{label}={value}")
             if facts:
-                profile_lines.append(
+                identity_lines.append(
                     "Known facts about the user: " + ", ".join(facts)
                 )
-            profile_lines.append(
-                "Instruction: Sirf inhi diye gaye facts ka use karo. Koi bhi fact jo yahan nahi diya gaya hai, use mat banao ya guess mat karo."
-            )
-            system_prompt = system_prompt + "\n\n" + "\n".join(profile_lines)
+
+        identity_lines.append(
+            "Instruction: Sirf inhi diye gaye facts ka use karo. Koi bhi fact jo yahan nahi diya gaya hai, use mat banao ya guess mat karo."
+        )
+        system_prompt = system_prompt + "\n\n" + "\n".join(identity_lines)
 
         answer = await AIToolsService.generate_text(
             prompt=prompt,
