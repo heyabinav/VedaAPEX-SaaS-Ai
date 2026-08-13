@@ -632,6 +632,13 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 150
     ALLOWED_UPLOAD_EXTENSIONS: str = ".jpg,.jpeg,.png,.gif,.webp,.mp4,.mov,.mp3,.wav,.pdf,.docx,.xlsx,.pptx"
     ADMIN_IP_WHITELIST: Optional[str] = None
+
+    # ─── Redis Chat Memory ─────────────────────────────────────────────────────────────────────────
+    REDIS_URL: Optional[str] = None
+    REDIS_CHAT_TTL: int = 2592000  # 30 days in seconds (86400 * 30)
+    REDIS_CHAT_CONTEXT_LIMIT: int = 50  # Recent messages to keep in fast memory
+    REDIS_CHAT_SUMMARY_TOKEN_THRESHOLD: int = 5000  # Summarize when approaching this token count
+
     def __init__(self, **values):
         env = os.environ
 

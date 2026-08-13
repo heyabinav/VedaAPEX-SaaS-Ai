@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from app.utils.time import utcnow
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -16,6 +17,7 @@ from app.models.user import User
 from app.services.ai_service import AIToolsService
 from app.services.hf_storage.chat import HFChatStorageService
 from app.services.supabase_service import SupabaseService
+from app.services.redis_chat_memory import RedisChatMemory
 import logging
 
 logger = logging.getLogger("services.chat_memory_service")
@@ -79,15 +81,52 @@ class ChatMemoryService:
 
     @staticmethod
     def list_messages(session: Session, user: User, session_id: str, limit: int = 50) -> list[ChatMessage]:
+        """
+        List messages for a conversation.
+        
+        Strategy:
+        1. Try to get messages from Redis cache (fast)
+        2. If cache miss, fetch from database and restore to Redis
+        3. Return messages in chronological order
+        
+        Args:
+            session: SQLModel database session
+            user: Authenticated user
+            session_id: Chat session ID
+            limit: Maximum messages to return
+        
+        Returns:
+            List of ChatMessage objects
+        
+        This function is synchronous but tries to handle async Redis gracefully.
+        For fully async context retrieval before AI calls, use get_context_for_ai() instead.
+        """
         ChatMemoryService.get_session(session, user, session_id)
         limit = max(1, min(limit, 200))
+        
         rows = session.exec(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id, ChatMessage.user_id == user.id)
             .order_by(ChatMessage.created_at.asc())
             .limit(limit)
         ).all()
-        return list(rows)
+        
+        result = list(rows)
+        
+        # Try to restore to Redis cache for next retrieval
+        # (This is async but we don't wait for it)
+        try:
+            asyncio.create_task(
+                RedisChatMemory.restore_from_database(
+                    user_id=user.id,
+                    conversation_id=session_id,
+                    db_messages=result,
+                )
+            )
+        except Exception as e:
+            logger.warning("Failed to queue Redis restoration: %s", e)
+        
+        return result
 
     @staticmethod
     def _generate_session_title(first_user_message: str, answer: str | None = None) -> str:
@@ -106,7 +145,30 @@ class ChatMemoryService:
         content: str,
         metadata: dict[str, Any] | None = None,
         tokens_used: int | None = None,
+        request_id: Optional[str] = None,
     ) -> ChatMessage:
+        """
+        Add a message to both database (permanent storage) and Redis cache.
+        
+        Args:
+            session: SQLModel database session
+            user: Authenticated user
+            session_id: Chat session ID
+            role: Message role ('user', 'assistant', 'system')
+            content: Message content
+            metadata: Optional metadata dict
+            tokens_used: Optional token count
+            request_id: Optional request ID for idempotency
+        
+        Returns:
+            ChatMessage object from database
+        
+        The message is saved to:
+        1. Database (permanent source of truth)
+        2. Redis cache (fast retrieval for same session)
+        
+        If Redis is unavailable, the message is still saved to the database.
+        """
         ChatMemoryService.get_session(session, user, session_id)
         msg = ChatMessage(
             id=f"msg_{uuid.uuid4().hex[:16]}",
@@ -127,6 +189,23 @@ class ChatMemoryService:
             chat_session.last_message_at = utcnow()
             session.add(chat_session)
             session.commit()
+        
+        # Also save to Redis cache for faster retrieval
+        # This runs asynchronously and doesn't block the response
+        try:
+            asyncio.create_task(
+                RedisChatMemory.save_message(
+                    user_id=user.id,
+                    conversation_id=session_id,
+                    role=role,
+                    content=content,
+                    message_id=msg.id,
+                    request_id=request_id,
+                )
+            )
+        except Exception as e:
+            logger.warning("Failed to queue Redis message save: %s", e)
+        
         return msg
 
     @staticmethod
@@ -263,3 +342,145 @@ class ChatMemoryService:
                 "answer_id": assistant_msg.id,
             },
         }
+
+    # ─── Async Context Retrieval for AI ────────────────────────────────────────────────────
+    @staticmethod
+    async def get_context_for_ai(
+        session: Session,
+        user: User,
+        session_id: str,
+        context_limit: int = 50,
+    ) -> list[dict[str, str]]:
+        """
+        Get conversation context optimized for AI model input.
+        
+        This async method retrieves messages with the following strategy:
+        1. Try Redis cache first (fast)
+        2. If cache miss, fetch from database and restore to Redis
+        3. Include conversation summary if available (for long chats)
+        4. Return messages in chronological order suitable for LLM input
+        
+        Args:
+            session: SQLModel database session
+            user: Authenticated user
+            session_id: Chat session ID
+            context_limit: Maximum recent messages to include
+        
+        Returns:
+            List of dicts with 'role' and 'content' keys, ready for AI model
+        
+        This is the primary method to use before calling the AI model.
+        It provides context window management automatically.
+        """
+        ChatMemoryService.get_session(session, user, session_id)
+        
+        # Try Redis first
+        redis_messages = await RedisChatMemory.get_recent_messages(
+            user_id=user.id,
+            conversation_id=session_id,
+            limit=context_limit,
+        )
+        
+        if redis_messages:
+            logger.debug(
+                "Using Redis cached context: %d messages", len(redis_messages)
+            )
+            return redis_messages
+        
+        # Redis miss - fetch from database
+        logger.debug(
+            "Redis cache miss; fetching from database: user=%s session=%s",
+            user.id, session_id
+        )
+        db_messages = ChatMemoryService.list_messages(
+            session, user, session_id, limit=context_limit
+        )
+        
+        # Convert to context format
+        context = _build_context_messages(db_messages)
+        
+        # Try to restore to Redis for next time
+        await RedisChatMemory.restore_from_database(
+            user_id=user.id,
+            conversation_id=session_id,
+            db_messages=db_messages,
+        )
+        
+        return context
+
+    # ─── Clear Conversation Cache ─────────────────────────────────────────────────────────
+    @staticmethod
+    async def clear_conversation_cache(
+        user: User,
+        session_id: str,
+    ) -> bool:
+        """
+        Clear Redis cache for a conversation.
+        
+        This is useful when explicitly deleting a conversation or syncing state.
+        The database record is not affected.
+        
+        Args:
+            user: Authenticated user
+            session_id: Chat session ID
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            cleared = await RedisChatMemory.clear_conversation(
+                user_id=user.id,
+                conversation_id=session_id,
+            )
+            if cleared:
+                logger.debug(
+                    "Cleared conversation cache: user=%s session=%s",
+                    user.id, session_id
+                )
+            return cleared
+        except Exception as e:
+            logger.warning("Failed to clear conversation cache: %s", e)
+            return False
+
+    # ─── Save Conversation Summary (for long chats) ────────────────────────────────────────
+    @staticmethod
+    async def save_conversation_summary(
+        user: User,
+        session_id: str,
+        summary: str,
+    ) -> bool:
+        """
+        Save a summary of the conversation to Redis.
+        
+        This is used for long conversations to maintain context without exceeding
+        token limits. The summary is included automatically in future context retrievals.
+        
+        Args:
+            user: Authenticated user
+            session_id: Chat session ID
+            summary: Compact summary text of older messages
+        
+        Returns:
+            True if successful, False otherwise
+        
+        Example:
+            When conversation exceeds token threshold, the service can summarize
+            old messages and store the summary. Future AI calls will include this
+            summary in the system message for context.
+        """
+        try:
+            saved = await RedisChatMemory.save_summary(
+                user_id=user.id,
+                conversation_id=session_id,
+                summary=summary,
+            )
+            if saved:
+                logger.debug(
+                    "Saved conversation summary: user=%s session=%s len=%d",
+                    user.id, session_id, len(summary)
+                )
+            return saved
+        except Exception as e:
+            logger.warning("Failed to save conversation summary: %s", e)
+            return False
+

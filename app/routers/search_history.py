@@ -235,14 +235,21 @@ async def get_search_history_results(
 
 
 @router.post("/title/generate", response_model=SearchTitleGenerateResponse)
-async def generate_search_title(body: SearchTitleGenerateRequest):
+async def generate_search_title(body: SearchTitleGenerateRequest) -> SearchTitleGenerateResponse:
     """Generate a short title from a search query or result payload."""
-    title = _generate_title_from_query(body.query, body.source, body.results)
-    return {
-        "success": True,
-        "title": title,
-        "source": body.source,
-    }
+    try:
+        title = _generate_title_from_query(body.query, body.source, body.results)
+        return SearchTitleGenerateResponse(
+            success=True,
+            title=title,
+            source=body.source,
+        )
+    except Exception as e:
+        logger.error(f"Title generation failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate title: {str(e)}"
+        )
 
 
 @router.post("/deep", response_model=DeepSearchResponse)

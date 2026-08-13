@@ -18,6 +18,7 @@ from app.email.database import init_db as init_email_db
 from app.middleware.api_logger import APILoggerMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware
+from app.services.redis_client import RedisClient
 
 # Routers
 from app.routers.auth import router as auth_router
@@ -70,6 +71,19 @@ async def lifespan(app: FastAPI):
         logger.warning("Runtime environment warnings: %s", runtime_warnings)
 
     logger.info("Starting VedaCLI Backend...")
+    
+    logger.info("Initializing Redis chat memory...")
+    try:
+        await RedisClient.initialize()
+        if RedisClient.is_available():
+            logger.info("✓ Redis chat memory initialized")
+            health = await RedisClient.health_check()
+            logger.info("Redis status: %s", health)
+        else:
+            logger.warning("Redis is not configured; chat memory will use database only")
+    except Exception as e:
+        logger.warning("Redis initialization failed: %s (continuing without Redis)", e)
+    
     logger.info("Initializing SQLModel Database Tables...")
     try:
         init_db()
@@ -110,6 +124,16 @@ async def lifespan(app: FastAPI):
         logger.warning("Processor warmup skipped: %s", e)
 
     yield
+    
+    # ─── Shutdown ─────────────────────────────────────────────────────────────────
+    logger.info("Shutting down VedaCLI Backend...")
+    
+    logger.info("Closing Redis connection...")
+    try:
+        await RedisClient.shutdown()
+        logger.info("✓ Redis connection closed")
+    except Exception as e:
+        logger.warning("Error closing Redis: %s", e)
 
 
 app = FastAPI(
