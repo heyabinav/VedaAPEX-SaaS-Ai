@@ -44,3 +44,21 @@ class UserSkillsFileResponse(BaseModel):
 class SkillDeleteAllResponse(BaseModel):
     success: bool = True
     message: str = "✅ Aapki saari skills delete kar di gayi hain."
+
+
+# Skill Ingestion Schemas
+
+class GitHubImportRequest(BaseModel):
+    """Request to import a GitHub repository as a skill."""
+    url: str = Field(..., description="GitHub repository URL (e.g., https://github.com/owner/repo)")
+    name: Optional[str] = Field(None, min_length=2, max_length=100, description="Custom skill name (optional)")
+    description: Optional[str] = Field(None, min_length=10, max_length=500, description="Custom description (optional)")
+    level: Optional[str] = Field(None, description="Skill level: beginner, intermediate, advanced, expert (optional)")
+
+
+class FolderImportRequest(BaseModel):
+    """Request to import a folder as a skill."""
+    skill_name: str = Field(..., min_length=2, max_length=100, description="Name for the imported skill")
+    description: Optional[str] = Field(None, min_length=10, max_length=500, description="Skill description (optional)")
+    level: Optional[str] = Field(None, description="Skill level: beginner, intermediate, advanced, expert (optional)")
+

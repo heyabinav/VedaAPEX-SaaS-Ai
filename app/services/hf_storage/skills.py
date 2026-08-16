@@ -320,6 +320,12 @@ class SkillStorageService:
             existing["confidence"] = confidence
             existing["source"] = source
             existing["updated_at"] = now_iso
+            
+            # Preserve additional fields from imported skills if provided
+            for key in ["instructions", "capabilities", "examples", "limitations", "source_url", "tags", "enabled"]:
+                if key in skill_dict:
+                    existing[key] = skill_dict[key]
+            
             saved_skill = existing
         else:
             skill_num = len(skills_list) + 1
@@ -338,7 +344,14 @@ class SkillStorageService:
                 "source": source,
                 "created_at": now_iso,
                 "updated_at": now_iso,
+                "enabled": skill_dict.get("enabled", True),
             }
+            
+            # Add additional fields from imported skills
+            for key in ["instructions", "capabilities", "examples", "limitations", "source_url", "tags"]:
+                if key in skill_dict:
+                    saved_skill[key] = skill_dict[key]
+            
             skills_list.append(saved_skill)
 
         data["skills"] = skills_list
@@ -360,7 +373,7 @@ class SkillStorageService:
 
     @staticmethod
     def update_skill(user_id: Any, skill_id: str, update_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Update single skill attributes (level, confidence, source)."""
+        """Update single skill attributes (level, confidence, source, enabled, etc.)."""
         safe_uid = _sanitize_user_id(user_id)
         data = SkillStorageService.load_skills(safe_uid)
         skills_list = data.get("skills", [])
@@ -379,6 +392,9 @@ class SkillStorageService:
 
         if "confidence" in update_data and update_data["confidence"] is not None:
             target_skill["confidence"] = _validate_confidence(update_data["confidence"])
+
+        if "enabled" in update_data and update_data["enabled"] is not None:
+            target_skill["enabled"] = bool(update_data["enabled"])
 
         if "name" in update_data and update_data["name"]:
             new_name = _normalize_skill_name(update_data["name"])

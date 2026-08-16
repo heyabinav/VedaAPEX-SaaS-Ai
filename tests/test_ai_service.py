@@ -123,6 +123,63 @@ def test_generate_text_returns_helpful_local_fallback_for_greetings(monkeypatch)
     assert "ready to help" in result.lower()
 
 
+def test_generate_text_fallback_for_name_question_is_not_prompt_repeat(monkeypatch):
+    async def fake_run_model(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="tumhara name kya ha",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="replicate",
+        )
+    )
+
+    assert "apexvision" in result.lower()
+    assert "tumhara name kya ha" not in result.lower()
+
+
+def test_generate_text_returns_veda_identity_facts_only_for_company_questions(monkeypatch):
+    async def fake_run_model(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(
+        "app.services.ai_service.ReplicateProvider.run_model",
+        fake_run_model,
+    )
+
+    result = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="VedaApex kisne banaya hai?",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="replicate",
+        )
+    )
+
+    assert "Veda AI" in result
+    assert "Raman" in result
+    assert "Himanshu" in result
+
+    neutral = asyncio.run(
+        AIToolsService.generate_text(
+            prompt="How do I build a website?",
+            system_prompt="You are a helpful assistant.",
+            tier=1,
+            provider="replicate",
+        )
+    )
+
+    assert "Veda AI" not in neutral
+    assert "Raman" not in neutral
+
+
 def test_generate_text_uses_gemini_provider_when_requested(monkeypatch):
     async def fake_gemini_run_model(model, input_data, starting_tier=1):
         assert model == "gemini-2.0-flash"

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY_TIER6: Optional[str] = None
     DOCUMENT_COMPILER_KEY: Optional[str] = None
 
+    # Media Search API Keys
+    PEXELS_API_KEY: Optional[str] = None  # For image and video search
+    NASA_API_KEY: Optional[str] = "DEMO_KEY"  # For NASA space images
+
     # Replicate Tier Keys
     REPLICATE_API_KEY_TIER1: Optional[str] = None
     REPLICATE_API_KEY_TIER2: Optional[str] = None
@@ -469,6 +473,20 @@ class Settings(BaseSettings):
     LOGODEV_SECRET_KEY_TIER7: Optional[str] = None
     LOGODEV_PUBLISHER_KEY_TIER8: Optional[str] = None
     LOGODEV_SECRET_KEY_TIER8: Optional[str] = None
+
+    # Web Search Provider Keys
+    SERPER_API_KEY: Optional[str] = None
+    TAVILY_API_KEY: Optional[str] = None
+
+    # Serper Tier Keys
+    SERPER_API_KEY_TIER1: Optional[str] = None
+    SERPER_API_KEY_TIER2: Optional[str] = None
+    SERPER_API_KEY_TIER3: Optional[str] = None
+    SERPER_API_KEY_TIER4: Optional[str] = None
+    SERPER_API_KEY_TIER5: Optional[str] = None
+    SERPER_API_KEY_TIER6: Optional[str] = None
+    SERPER_API_KEY_TIER7: Optional[str] = None
+    SERPER_API_KEY_TIER8: Optional[str] = None
 
     # Tavily Tier Keys
     TAVILY_API_KEY_TIER1: Optional[str] = None

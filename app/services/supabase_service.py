@@ -15,6 +15,7 @@ Key fixes:
 
 from app.utils.time import utcnow
 
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -302,6 +303,40 @@ class SupabaseService:
         return user, created
 
     @staticmethod
+    async def save_user_details(user_id: str, key: str, value: Any) -> Any:
+        """Upsert a JSON-friendly user detail into the Supabase user_details table."""
+        if not SupabaseService.is_configured() or not user_id or not key:
+            return None
+
+        payload = {
+            "user_id": str(user_id),
+            "key": key,
+            "value": json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.SUPABASE_TIMEOUT_SECONDS) as client:
+                response = await client.post(
+                    f"{SupabaseService._base_url()}/rest/v1/user_details?on_conflict=user_id,key",
+                    headers=SupabaseService._headers(),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            logger.warning("Failed to save user detail %s for user_id=%s: %s", key, user_id, exc)
+            return None
+
+        if response.status_code not in {200, 201, 204}:
+            logger.warning(
+                "Supabase user_details save returned status=%s for user_id=%s key=%s",
+                response.status_code,
+                user_id,
+                key,
+            )
+            return None
+
+        return SupabaseService._safe_json(response)
+
+    @staticmethod
     async def get_user_profile_facts(user_id: str) -> dict[str, str]:
         """Fetch user profile facts from Supabase public.profiles for the given user UUID."""
         if not SupabaseService.is_configured() or not user_id:
@@ -346,3 +381,47 @@ class SupabaseService:
                 and str(value).strip()
             }
         return {}
+
+    @staticmethod
+    async def get_user_details(user_id: str) -> dict[str, Any]:
+        """Fetch stored user details from Supabase user_details table."""
+        if not SupabaseService.is_configured() or not user_id:
+            return {}
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.SUPABASE_TIMEOUT_SECONDS) as client:
+                response = await client.get(
+                    f"{SupabaseService._base_url()}/rest/v1/user_details",
+                    headers=SupabaseService._headers(),
+                    params={
+                        "user_id": f"eq.{user_id}",
+                        "select": "key,value",
+                    },
+                )
+        except httpx.HTTPError as exc:
+            logger.warning("Failed to fetch user_details for user_id=%s: %s", user_id, exc)
+            return {}
+
+        if response.status_code != 200:
+            logger.warning(
+                "Supabase user_details request for user_id=%s returned status=%s",
+                user_id,
+                response.status_code,
+            )
+            return {}
+
+        data = SupabaseService._safe_json(response)
+        if not isinstance(data, list):
+            return {}
+
+        details: dict[str, Any] = {}
+        for row in data:
+            if isinstance(row, dict):
+                key = row.get("key")
+                value = row.get("value")
+                if key is not None:
+                    try:
+                        details[key] = json.loads(value) if isinstance(value, str) else value
+                    except (TypeError, ValueError):
+                        details[key] = value
+        return details

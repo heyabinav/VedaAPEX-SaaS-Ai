@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.client.sse import sse_client
 
 from app.core.config import settings
@@ -41,7 +41,7 @@ async def connect_streamable_http(
     logger.info("Connecting via Streamable HTTP: %s (timeout=%ss)", url, timeout)
 
     try:
-        async with streamablehttp_client(
+        async with streamable_http_client(
             url,
             headers=headers or {},
             timeout=timeout,

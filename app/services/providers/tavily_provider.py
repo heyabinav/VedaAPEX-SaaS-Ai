@@ -6,6 +6,8 @@ from ...core.config import settings
 class TavilyProvider:
     @staticmethod
     def get_api_key(tier: int) -> str:
+        if tier == 1 and settings.TAVILY_API_KEY:
+            return settings.TAVILY_API_KEY
         keys = {
             1: settings.TAVILY_API_KEY_TIER1,
             2: settings.TAVILY_API_KEY_TIER2,
@@ -17,6 +19,13 @@ class TavilyProvider:
             8: settings.TAVILY_API_KEY_TIER8,
         }
         return keys.get(tier) or ""
+
+    @staticmethod
+    def is_available() -> bool:
+        for tier in range(1, 9):
+            if TavilyProvider.get_api_key(tier):
+                return True
+        return False
 
     @staticmethod
     async def search(query: str, starting_tier: int = 1) -> Any:
@@ -33,7 +42,7 @@ class TavilyProvider:
                         json={
                             "api_key": api_key,
                             "query": query,
-                            "search_depth": "smart",
+                            "search_depth": "advanced",
                         },
                     )
 
@@ -45,7 +54,27 @@ class TavilyProvider:
                     if response.status_code != 200:
                         raise Exception(f"Tavily API error: {response.text}")
 
-                    return response.json()
+                    payload = response.json()
+                    results = payload.get("results", []) if isinstance(payload, dict) else []
+                    normalized = {
+                        "success": True,
+                        "query": query,
+                        "results": [
+                            {
+                                "title": item.get("title", ""),
+                                "url": item.get("url", ""),
+                                "snippet": item.get("content") or item.get("snippet", ""),
+                                "score": item.get("score", 1.0),
+                                "provider": "tavily",
+                                "tier": tier,
+                            }
+                            for item in results
+                        ],
+                        "result_count": len(results),
+                        "provider": "tavily",
+                        "tier_used": tier,
+                    }
+                    return normalized
                 except Exception as e:
                     last_error = str(e)
                     continue

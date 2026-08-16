@@ -9,7 +9,7 @@ from services.unified_search_service import UnifiedSearchService
 from providers.provider_manager import ProviderManager
 from providers.mock_providers import PexelsProvider, WikimediaProvider, NASAProvider
 from services.cache_service import CacheService
-from services.providers.superapi_provider import SuperAPIProvider
+from services.providers.serper_provider import SerperProvider
 from utils.exceptions import VedaApexException, ValidationError
 from config import config
 from utils.helpers import helpers
@@ -78,7 +78,7 @@ async def unified_search(
 
 @router.get(
     "/browser-search",
-    name="Browser Search (SuperAI)",
+    name="Browser Search (Serper)",
     operation_id="browser_search",
 )
 async def browser_search(
@@ -89,48 +89,46 @@ async def browser_search(
     ),
 ):
     """
-    Browser-style search endpoint powered by SuperAI.
+    Browser-style search endpoint powered by Serper.
 
-    Uses SuperAPI to return a concise AI-generated website search answer
-    for the provided query and search type.
+    Performs real web search and returns a concise summary with titles,
+    URLs, and snippets for the requested query and search type.
     """
     try:
-        prompt = (
-            "You are a browser search assistant. Search the web for relevant websites,"
-            f" articles, and resources for the query '{q}'."
-            f" Focus on {search_type} search results and provide a clear summary with"
-            " titles, URLs, and short descriptions."
-        )
-
-        result = await SuperAPIProvider.run_model(
-            "https://api.superapi.ai/v1/chat/completions",
-            {
-                "model": "gpt-4o",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a helpful browser search assistant that summarizes web results.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            },
+        search_result = await SerperProvider.search(
+            query=q,
             starting_tier=1,
+            num_results=5,
         )
 
-        answer = None
-        if isinstance(result, dict) and result.get("choices"):
-            first_choice = result["choices"][0]
-            answer = first_choice.get("message", {}).get("content")
-        if answer is None:
-            answer = str(result)
+        items = search_result.get("results", [])
+        if not items:
+            return {
+                "success": True,
+                "query": q,
+                "search_type": search_type,
+                "provider": "serper",
+                "answer": "No live web results were found for this query.",
+                "raw_response": search_result,
+                "timestamp": helpers.get_timestamp(),
+            }
+
+        answer_lines = []
+        for idx, item in enumerate(items[:5], start=1):
+            title = item.get("title") or "Untitled result"
+            url = item.get("url") or ""
+            snippet = item.get("snippet") or ""
+            answer_lines.append(f"{idx}. {title}\nURL: {url}\n{snippet}")
+
+        answer = "\n\n".join(answer_lines)
 
         return {
             "success": True,
             "query": q,
             "search_type": search_type,
-            "provider": "superapi",
+            "provider": "serper",
             "answer": answer,
-            "raw_response": result,
+            "raw_response": search_result,
             "timestamp": helpers.get_timestamp(),
         }
 

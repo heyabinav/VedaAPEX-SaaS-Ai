@@ -961,15 +961,42 @@ class AIToolsService:
         if lowered_prompt in {"hi", "hello", "hey", "hola", "namaste"}:
             return "Hello! I’m currently unable to reach the live text generation service, but I’m here and ready to help."
 
-        if lowered_prompt.startswith(("what is", "who is", "why is", "how does", "can you")):
+        if any(token in lowered_prompt for token in ["tumhara naam", "tumhara name", "naam kya", "name kya", "kaun ho", "kaun hai", "who are you", "what is your name"]):
             return (
-                f"I’m currently unable to reach the live text generation service right now, "
-                f"but I can still help with your request: {stripped_prompt}"
+                "Mera naam ApexVision hai. Live AI service abhi unavailable hai, lekin main aapki help karne ke liye ready hoon."
+            )
+
+        veda_signals = [
+            "vedaapex",
+            "veda ai",
+            "veda apex",
+            "vedaapex kisne banaya",
+            "vedaapex ke founders",
+            "vedaapex ka founder",
+            "vedaapex parent company",
+            "vedaapex aur veda ai",
+            "veda apex kisne",
+            "veda apex founders",
+            "veda apex founder",
+        ]
+        if any(signal in lowered_prompt for signal in veda_signals):
+            return (
+                "- **VedaApex kisne banaya?** → **Veda AI** ne banaya hai.\n\n"
+                "- **VedaApex ki parent company kaun hai?** → **Veda AI**.\n\n"
+                "- **VedaApex ke founders kaun hain?** → **Raman, Aman, Ansh aur Himanshu**.\n\n"
+                "- **VedaApex ka founder/owner Himanshu hai?** → Tumhare bataye hisaab se **Himanshu founder team ka part hai**.\n\n"
+                "- **VedaApex aur Veda AI ka relation kya hai?** → **VedaApex, Veda AI ki company/product hai.**"
+            )
+
+        if lowered_prompt.startswith(("what is", "who is", "why is", "how does", "can you", "kya", "ky", "tum", "aap")):
+            return (
+                "Main abhi live text service se connect nahi ho pa raha, lekin aapka request process hone ke liye ready hoon. "
+                "Agar aap chaho, main aapko ek quick local answer de sakta hoon."
             )
 
         return (
-            f"I’m currently unable to reach the live text generation service right now, "
-            f"but I can still respond to your request: {stripped_prompt}"
+            "I’m currently unable to reach the live text generation service right now, "
+            "but I can still help you with this request in local fallback mode."
         )
 
     @staticmethod

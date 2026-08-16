@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
-from sqlmodel import Session, create_engine, SQLSession
+from sqlmodel import Session, create_engine
 from sqlmodel.pool import StaticPool
 
 from app.core.config import settings
@@ -46,7 +46,7 @@ def engine():
 @pytest.fixture
 def db_session(engine):
     """Create a fresh database session for each test."""
-    with SQLSession(engine) as session:
+    with Session(engine) as session:
         yield session
 
 
@@ -254,6 +254,19 @@ class TestContextRetrievalForAI:
 
 
 # ─── TEST SUITE 4: Conversation Summarization ────────────────────────────────
+def test_extract_user_score_facts_from_prior_chat_messages():
+    """Prior numeric facts should be preserved and reusable across later questions."""
+    messages = [
+        {"role": "user", "content": "Mere 10th me 90 percent aya tha."},
+        {"role": "assistant", "content": "Nice!"},
+    ]
+
+    facts = ChatMemoryService.extract_user_facts(messages)
+
+    assert facts["score_facts"]["10th"] == 90
+    assert facts["score_facts"]["10"] == 90
+
+
 class TestConversationSummarization:
     """Test long conversation handling via summarization."""
 

@@ -22,6 +22,7 @@ from app.services.redis_client import RedisClient
 
 # Routers
 from app.routers.auth import router as auth_router
+from app.routers.commands import router as commands_router
 from app.routers.ai_tools import router as ai_tools_router
 from app.routers.admin import router as admin_router
 from app.routers.generation import router as generation_router
@@ -35,6 +36,7 @@ from app.routers.canva_router import router as canva_router
 from app.routers.figma import router as figma_router
 from app.routers.search_history import router as search_history_router
 from app.routers.chat import router as chat_router
+from app.routers.presentations import router as presentations_router
 from app.routes.canva_oauth import router as canva_oauth_router
 from app.routes.figma_oauth import router as figma_oauth_router
 from app.routers.google import router as google_router
@@ -57,6 +59,8 @@ from app.routers.admin_dashboard import router as admin_dashboard_router
 from app.routers.mcp_custom import router as mcp_custom_router
 from app.routers.custom_skills import router as custom_skills_router
 from app.routers.persistent_skills import router as persistent_skills_router
+from app.routers.skills_import import router as skills_import_router
+from app.routers.media_search import router as media_search_router
 from app.routers.website import router as website_router
 
 # Configure structured logging
@@ -191,6 +195,7 @@ app.mount("/api/v1/media/download", StaticFiles(directory=uploads_dir), name="me
 # -----------------------------------------------------------------------------
 # Core routers
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(commands_router, prefix="/api/v1")
 app.include_router(ai_tools_router, prefix="/api/v1")
 # Compatibility alias for ai routes used by docs/examples
 app.include_router(ai_tools_router)
@@ -201,6 +206,7 @@ app.include_router(subscription_router, prefix="/api/v1")
 app.include_router(wallet_router, prefix="/api/v1")
 app.include_router(api_keys_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
+app.include_router(presentations_router)
 app.include_router(canva_router)
 app.include_router(figma_router)
 app.include_router(search_history_router, prefix="/api/v1")
@@ -235,6 +241,12 @@ app.include_router(custom_skills_router, prefix="/api/v1")
 
 # Persistent User Skills System (Hugging Face Dataset storage)
 app.include_router(persistent_skills_router, prefix="/api/v1")
+
+# Skill Ingestion (GitHub and Folder imports)
+app.include_router(skills_import_router, prefix="/api/v1")
+
+# Unified Media Search (images, videos, NASA space content)
+app.include_router(media_search_router, prefix="/api/v1")
 
 # Website requirements questionnaire endpoint
 app.include_router(website_router)

@@ -18,7 +18,11 @@ import logging
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-import aioredis
+try:
+    import aioredis  # type: ignore
+except ImportError:  # pragma: no cover
+    aioredis = None
+
 from redis.asyncio import Redis, ConnectionPool
 
 from app.core.config import settings

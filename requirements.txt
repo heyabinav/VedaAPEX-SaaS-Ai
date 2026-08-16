@@ -27,6 +27,9 @@ aiohttp>=3.9.0
 requests==2.31.0
 # uvloop removed for Windows compatibility
 
+# Web Search (fallback provider)
+duckduckgo-search>=3.9.0
+
 # Email & Validation
 email-validator==2.1.0
 

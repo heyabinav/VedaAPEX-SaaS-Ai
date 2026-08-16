@@ -4,6 +4,7 @@ from app.utils.time import utcnow
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Optional
@@ -18,6 +19,8 @@ from app.services.ai_service import AIToolsService
 from app.services.hf_storage.chat import HFChatStorageService
 from app.services.supabase_service import SupabaseService
 from app.services.redis_chat_memory import RedisChatMemory
+from app.services.search_router import SearchRouter
+from app.services.search_decision_engine import SearchDecisionEngine
 import logging
 
 logger = logging.getLogger("services.chat_memory_service")
@@ -45,7 +48,120 @@ def _extract_text(result: Any) -> str:
         return result.get("content") or result.get("text") or result.get("output") or ""
     return str(result)
 
+
+def _as_message_text(message: Any) -> str:
+    if isinstance(message, ChatMessage):
+        return message.content or ""
+    if isinstance(message, dict):
+        return str(message.get("content") or "")
+    return str(message or "")
+
+
 class ChatMemoryService:
+    @staticmethod
+    def extract_user_facts(messages: list[Any]) -> dict[str, Any]:
+        """Extract reusable user facts from earlier chat history, especially school-score facts."""
+        score_facts: dict[str, int] = {}
+
+        def add_fact(grade_key: str, percent: int) -> None:
+            if not grade_key or not (0 <= percent <= 100):
+                return
+            score_facts[grade_key] = percent
+            digits = re.sub(r"\D+", "", grade_key)
+            if digits:
+                score_facts[digits] = percent
+
+        for message in messages or []:
+            if isinstance(message, dict):
+                role = str(message.get("role") or "").lower()
+                content = str(message.get("content") or "")
+            else:
+                role = str(getattr(message, "role", "")).lower()
+                content = str(getattr(message, "content", "") or "")
+
+            if role != "user" or not content:
+                continue
+
+            text = " ".join(content.split())
+            lowered = text.lower()
+            patterns = [
+                r"(?P<grade>\d{1,2})(?:st|nd|rd|th)?\s*(?:me|mai|in|main|class|cls)?\s*(?P<percent>\d{1,3})\s*(?:%|percent(?:age)?)",
+                r"(?P<grade>\d{1,2})(?:st|nd|rd|th)?\s*(?:class|cls)?\s*(?:mein|me|in|mai)?\s*(?:.*?)(?P<percent>\d{1,3})\s*(?:%|percent(?:age)?)",
+                r"(?P<percent>\d{1,3})\s*(?:%|percent(?:age)?)\s*(?:.*?)(?:me|mai|in|class|cls)?\s*(?P<grade>\d{1,2})(?:st|nd|rd|th)?",
+            ]
+
+            for pattern in patterns:
+                for match in re.finditer(pattern, lowered):
+                    grade = (match.group("grade") or "").strip()
+                    percent = match.group("percent")
+                    if not grade or not percent:
+                        continue
+                    try:
+                        grade_number = int(grade)
+                        percent_number = int(percent)
+                    except ValueError:
+                        continue
+                    if grade_number > 100:
+                        continue
+                    grade_label = f"{grade_number}th" if grade_number <= 12 else str(grade_number)
+                    add_fact(grade_label, percent_number)
+                    add_fact(str(grade_number), percent_number)
+
+            # Handles direct sentences like "10th me 90 percent aaya tha" with extra words between grade and percent.
+            for key in (r"(?P<grade>\d{1,2})th\s*(?:me|mai|in|main|class|cls)?\s*(?:.*?)(?P<percent>\d{1,3})\s*(?:%|percent(?:age)?)",
+                         r"(?P<grade>\d{1,2})\s*(?:me|mai|in|main|class|cls)?\s*(?:.*?)(?P<percent>\d{1,3})\s*(?:%|percent(?:age)?)"):
+                for match in re.finditer(key, lowered):
+                    grade = match.group("grade")
+                    percent = match.group("percent")
+                    try:
+                        percent_number = int(percent)
+                    except ValueError:
+                        continue
+                    if 0 <= percent_number <= 100:
+                        add_fact(f"{grade}th", percent_number)
+                        add_fact(grade, percent_number)
+
+        return {"score_facts": score_facts}
+
+    @staticmethod
+    async def save_memory_facts_to_supabase(user: User, facts: dict[str, Any]) -> None:
+        """Persist remembered facts in Supabase JSON for later session reuse."""
+        try:
+            from app.services.supabase_service import SupabaseService
+
+            if not SupabaseService.is_configured():
+                return
+
+            await SupabaseService.save_user_details(
+                str(user.id),
+                "chat_memory_json",
+                facts,
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist chat memory JSON for user_id=%s: %s", getattr(user, "id", None), exc)
+
+    @staticmethod
+    async def load_memory_facts_from_supabase(user: User) -> dict[str, Any]:
+        try:
+            from app.services.supabase_service import SupabaseService
+
+            if not SupabaseService.is_configured():
+                return {}
+
+            saved = await SupabaseService.get_user_details(str(user.id))
+            payload = saved.get("chat_memory_json") if isinstance(saved, dict) else None
+            if isinstance(payload, str):
+                try:
+                    return json.loads(payload)
+                except json.JSONDecodeError:
+                    return {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception as exc:
+            logger.warning("Failed to load chat memory JSON for user_id=%s: %s", getattr(user, "id", None), exc)
+            return {}
+
     @staticmethod
     def create_session(session: Session, user: User, title: str | None = None) -> ChatSession:
         chat_session = ChatSession(
@@ -216,6 +332,7 @@ class ChatMemoryService:
         message: str,
         model: str = "auto",
         context_limit: int = 12,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if session_id:
             chat_session = ChatMemoryService.get_session(session, user, session_id)
@@ -225,6 +342,12 @@ class ChatMemoryService:
 
         past_messages = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit)
         context_messages = _build_context_messages(past_messages)
+        extracted_facts = ChatMemoryService.extract_user_facts(past_messages)
+        saved_memory = await ChatMemoryService.load_memory_facts_from_supabase(user)
+        merged_facts = extracted_facts
+        if saved_memory:
+            score_facts = {**saved_memory.get("score_facts", {}), **extracted_facts.get("score_facts", {})}
+            merged_facts = {"score_facts": score_facts}
 
         system_prompt = (
             "You are a context-aware assistant. Use the previous chat history to answer the user's current message. "
@@ -232,6 +355,15 @@ class ChatMemoryService:
             "If the context is insufficient, ask a concise clarifying question. "
             "Stay direct, factual, and consistent with earlier turns."
         )
+
+        if merged_facts.get("score_facts"):
+            fact_lines = [
+                f"- {grade}: {percent}%"
+                for grade, percent in sorted(merged_facts["score_facts"].items(), key=lambda item: str(item[0]))
+            ]
+            system_prompt += "\n\nRemembered user score facts from earlier chat:\n" + "\n".join(fact_lines)
+
+        await ChatMemoryService.save_memory_facts_to_supabase(user, merged_facts)
 
         llm_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         llm_messages.extend(context_messages)
@@ -283,6 +415,101 @@ class ChatMemoryService:
         )
         system_prompt = system_prompt + "\n\n" + "\n".join(identity_lines)
 
+        # ───────────────────────────────────────────────────────────────
+        # INTELLIGENT WEB SEARCH INTEGRATION
+        # ───────────────────────────────────────────────────────────────
+        search_results = None
+        search_metadata = {}
+        
+        try:
+            # Check if web search is needed
+            should_search = SearchDecisionEngine.should_search(message)
+            search_reason = SearchDecisionEngine.get_search_reason(message)
+            request_type = SearchDecisionEngine.classify_request(message)
+            
+            logger.debug(
+                "Chat ask - Search decision: should_search=%s type=%s reason=%s",
+                should_search,
+                request_type,
+                search_reason,
+            )
+            
+            if should_search:
+                logger.info("Performing web search for chat message: %s", message[:80])
+                
+                # Perform web search
+                search_results = await SearchRouter.search_with_decision(
+                    query=message,
+                    num_results=8,
+                )
+                
+                if search_results and search_results.get("results"):
+                    logger.info(
+                        "Web search found %d results (provider=%s)",
+                        search_results.get("result_count", 0),
+                        search_results.get("provider", "unknown"),
+                    )
+                    
+                    # Build search context for system prompt
+                    search_context = ChatMemoryService._build_search_context(search_results)
+                    
+                    # Add search context to system prompt
+                    system_prompt += "\n\n" + search_context
+                    
+                    # Store search metadata
+                    search_metadata = {
+                        "web_search_performed": True,
+                        "search_provider": search_results.get("provider"),
+                        "search_result_count": search_results.get("result_count", 0),
+                        "search_reason": search_reason,
+                        "request_type": request_type,
+                    }
+                    
+                    logger.debug("Web search context added to system prompt")
+                else:
+                    logger.warning("Web search did not return results for: %s", message[:80])
+                    search_metadata = {
+                        "web_search_attempted": True,
+                        "search_result_count": 0,
+                        "search_reason": search_reason,
+                    }
+            else:
+                logger.debug("Web search not needed: %s", search_reason)
+                search_metadata = {
+                    "web_search_needed": False,
+                    "search_reason": search_reason,
+                    "request_type": request_type,
+                }
+        
+        except Exception as e:
+            logger.warning("Web search integration error (continuing without search): %s", str(e))
+            search_metadata = {"search_error": str(e)[:100]}
+
+        if attachments:
+            image_attachments = [
+                {
+                    "mime_type": item.get("mime_type"),
+                    "data": item.get("data"),
+                    "filename": item.get("filename"),
+                }
+                for item in attachments
+                if item.get("mime_type", "").startswith("image/")
+            ]
+            if image_attachments:
+                model_name = (model or "auto").lower()
+                supports_vision = (
+                    "gpt-4o" in model_name or "gemini" in model_name or "vision" in model_name or "qwen" in model_name or "claude" in model_name
+                )
+                if not supports_vision:
+                    raise HTTPException(status_code=400, detail={
+                        "success": False,
+                        "error": {
+                            "code": "MODEL_DOES_NOT_SUPPORT_VISION",
+                            "message": "The selected model does not support image analysis."
+                        }
+                    })
+                system_prompt = system_prompt + "\n\nThe user attached image(s). Analyze the attached image content along with the message."
+
         answer = await AIToolsService.generate_text(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -290,6 +517,10 @@ class ChatMemoryService:
             provider=model or "auto",
         )
         answer_text = _extract_text(answer).strip() or "I could not generate a response."
+
+        # Keep the latest extracted score facts in sync for future questions.
+        latest_facts = ChatMemoryService.extract_user_facts(past_messages + [{"role": "user", "content": message}, {"role": "assistant", "content": answer_text}])
+        await ChatMemoryService.save_memory_facts_to_supabase(user, latest_facts)
 
         first_user_message = next((msg.content for msg in past_messages if msg.role == "user"), message)
         if chat_session.title == "New Chat":
@@ -305,7 +536,11 @@ class ChatMemoryService:
             session_id,
             "assistant",
             answer_text,
-            metadata={"model": model, "context_limit": context_limit},
+            metadata={
+                "model": model,
+                "context_limit": context_limit,
+                **search_metadata,  # Include search metadata in message
+            },
         )
 
         history = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit + 2)
@@ -340,6 +575,15 @@ class ChatMemoryService:
                 "context_limit": context_limit,
                 "message_id": user_msg.id,
                 "answer_id": assistant_msg.id,
+                "attachments": [
+                    {
+                        "id": item.get("id"),
+                        "filename": item.get("filename"),
+                        "mime_type": item.get("mime_type"),
+                        "size": item.get("size"),
+                    }
+                    for item in (attachments or [])
+                ],
             },
         }
 
@@ -407,6 +651,60 @@ class ChatMemoryService:
         )
         
         return context
+
+    # ─── Build Search Context for System Prompt ────────────────────────────────────────────
+    @staticmethod
+    def _build_search_context(search_results: dict) -> str:
+        """
+        Build formatted search context from web search results.
+        
+        Converts search results into a clear, concise system prompt section
+        that the AI can use when generating its response.
+        
+        Args:
+            search_results: Dict from SearchRouter.search()
+            
+        Returns:
+            Formatted search context string
+        """
+        if not search_results or not search_results.get("results"):
+            return ""
+        
+        results = search_results.get("results", [])
+        provider = search_results.get("provider", "unknown")
+        
+        # Limit to top 5 results for token efficiency
+        top_results = results[:5]
+        
+        context_lines = [
+            "─" * 70,
+            f"WEB SEARCH RESULTS (from {provider}):",
+            "─" * 70,
+        ]
+        
+        for idx, result in enumerate(top_results, 1):
+            title = result.get("title", "")
+            url = result.get("url", "")
+            snippet = result.get("snippet", "")
+            
+            context_lines.append(f"\n[{idx}] {title}")
+            if url:
+                context_lines.append(f"    Source: {url}")
+            if snippet:
+                # Truncate long snippets
+                snippet_text = snippet[:300]
+                if len(snippet) > 300:
+                    snippet_text += "..."
+                context_lines.append(f"    {snippet_text}")
+        
+        context_lines.append(f"\n{'─' * 70}")
+        context_lines.append(
+            "Use the above web search results to inform your answer. "
+            "Cite sources when referencing information from the search results."
+        )
+        context_lines.append("─" * 70)
+        
+        return "\n".join(context_lines)
 
     # ─── Clear Conversation Cache ─────────────────────────────────────────────────────────
     @staticmethod
