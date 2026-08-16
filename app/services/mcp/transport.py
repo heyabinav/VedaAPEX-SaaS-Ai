@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
-from mcp.client.sse import sse_client
+from mcp.client.http_sse import http_sse_client
+from mcp.client.http_sse import sse_client
 
 from app.core.config import settings
 from app.services.mcp.errors import MCPConnectionFailed, MCPTimeout
@@ -41,20 +41,16 @@ async def connect_streamable_http(
     logger.info("Connecting via Streamable HTTP: %s (timeout=%ss)", url, timeout)
 
     try:
-        async with streamable_http_client(
-            url,
-            headers=headers or {},
-            timeout=timeout,
-        ) as (read_stream, write_stream, _):
+        async with http_sse_client(url) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
-                logger.info("MCP Streamable HTTP session initialized: %s", url)
+                logger.info("MCP HTTP-SSE session initialized: %s", url)
                 yield session
     except TimeoutError as exc:
-        raise MCPTimeout(f"Streamable HTTP connection timed out after {timeout}s") from exc
+        raise MCPTimeout(f"HTTP-SSE connection timed out after {timeout}s") from exc
     except Exception as exc:
-        logger.error("Streamable HTTP connection failed for %s: %s", url, exc)
-        raise MCPConnectionFailed(f"Streamable HTTP connection failed: {type(exc).__name__}") from exc
+        logger.error("HTTP-SSE connection failed for %s: %s", url, exc)
+        raise MCPConnectionFailed(f"HTTP-SSE connection failed: {type(exc).__name__}") from exc
 
 
 @asynccontextmanager
