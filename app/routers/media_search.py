@@ -7,8 +7,12 @@ from sqlmodel import Session
 from app.db.session import get_session
 from app.models.user import User
 from app.routers.auth import get_current_user_auth
-from .service import MediaSearchService
-from .models import MediaSearchRequest, MediaSearchResponse, MediaSearchErrorResponse
+from app.services.media_search.service import MediaSearchService
+from app.services.media_search.models import (
+    MediaSearchRequest,
+    MediaSearchResponse,
+    MediaSearchErrorResponse,
+)
 
 logger = logging.getLogger("app.routers.media_search")
 
