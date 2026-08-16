@@ -113,8 +113,45 @@ def init_db():
         else:
             raise
 
+    _seed_subscription_plans_if_empty()
     _ensure_missing_schema_columns()
     logger.info("All database tables created/verified successfully.")
+
+
+def _seed_subscription_plans_if_empty() -> None:
+    """Ensure default plan catalog exists so the subscription UI has data."""
+    try:
+        from sqlmodel import Session, select
+
+        from app.config.costs import SUBSCRIPTION_PLANS
+        from app.models.token import SubscriptionPlan
+
+        with Session(engine) as session:
+            existing_plans = session.exec(select(SubscriptionPlan)).all()
+            if existing_plans:
+                logger.info("Subscription plans already seeded (%d records).", len(existing_plans))
+                return
+
+            for index, plan in enumerate(SUBSCRIPTION_PLANS.values()):
+                session.add(
+                    SubscriptionPlan(
+                        name=plan["name"],
+                        slug=plan["slug"],
+                        price=plan["price"],
+                        currency="INR",
+                        billing_cycle="monthly",
+                        token_allocation=plan["token_allocation"],
+                        daily_credits=plan.get("daily_credits", 0),
+                        features=plan["features"],
+                        is_active=True,
+                        sort_order=index,
+                    )
+                )
+
+            session.commit()
+            logger.info("Seeded %d default subscription plans.", len(SUBSCRIPTION_PLANS))
+    except Exception as exc:
+        logger.warning("Failed to seed default subscription plans: %s", exc)
 
 
 def _ensure_missing_schema_columns() -> None:
