@@ -17,7 +17,7 @@ class TwoslidesProvider:
             7: settings.TWOSLIDES_API_KEY_TIER7,
             8: settings.TWOSLIDES_API_KEY_TIER8,
         }
-        return keys.get(tier) or ""
+        return keys.get(tier) or (settings.PPT_GENERATION_API_KEY if tier == 1 else "") or ""
 
     @staticmethod
     async def generate_ppt(prompt: str, starting_tier: int = 1) -> str:

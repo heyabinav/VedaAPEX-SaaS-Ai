@@ -21,8 +21,16 @@ class ReplicateProvider:
     async def run_model(owner: str, name: str, input_data: dict, starting_tier: int) -> Any:
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = None
+            service = input_data.pop("_service", None)
             for tier in range(starting_tier, 6):
-                api_key = ReplicateProvider.get_api_key(tier) or key_manager.get_key(service="image", provider="replicate")
+                api_key = ReplicateProvider.get_api_key(tier)
+                if not api_key and service == "video" and tier == 1:
+                    api_key = settings.VIDEO_GENERATION_API_KEY or ""
+                if not api_key:
+                    try:
+                        api_key = key_manager.get_key(service=service or "image", provider="replicate")
+                    except Exception:
+                        api_key = key_manager.get_key(service="image", provider="replicate")
                 if not api_key:
                     continue
                 headers = {

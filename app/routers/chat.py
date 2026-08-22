@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlmodel import Session
 
 from app.db.session import get_session
@@ -25,6 +25,7 @@ router = APIRouter(prefix="/chat", tags=["Chat Memory"])
 
 @router.post("/ask", response_model=ChatAnswerResponse)
 async def ask_chat(
+    req: Request,
     body: Optional[ChatMessageCreate] = None,
     message: Optional[str] = Form(default=None),
     session_id: Optional[str] = Form(default=None),
@@ -48,7 +49,11 @@ async def ask_chat(
     uploaded_attachments: list[UploadFile] = files or []
 
     try:
-        attachments, normalized = await AttachmentService.process(uploaded_attachments, user.id)
+        attachments, normalized = await AttachmentService.process(
+            uploaded_attachments,
+            user.id,
+            session=session,
+        )
         attachment_metadata = normalized
     except AttachmentValidationError as exc:
         raise HTTPException(
@@ -70,15 +75,21 @@ async def ask_chat(
             model=model or "auto",
             context_limit=context_limit,
             attachments=attachment_metadata,
+            base_url=str(req.base_url),
         )
         result["metadata"] = {
             **(result.get("metadata") or {}),
             "attachments": [
                 {
                     "id": item.get("id"),
+                    "asset_id": item.get("asset_id"),
                     "filename": item.get("filename"),
                     "mime_type": item.get("mime_type"),
                     "size": item.get("size"),
+                    "proxy_url": item.get("proxy_url"),
+                    "storage_key": item.get("storage_key"),
+                    "file_hash": item.get("file_hash"),
+                    "persistent": bool(item.get("persistent")),
                 }
                 for item in attachment_metadata
             ],

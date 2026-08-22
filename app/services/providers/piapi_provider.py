@@ -26,8 +26,11 @@ class PiAPIProvider:
         """Core method: Creates a task on PiAPI and polls until completion. Returns full output dict."""
         async with httpx.AsyncClient(timeout=180.0) as client:
             last_error = None
+            service = payload.pop("_service", None)
             for tier in range(starting_tier, 9):
                 api_key = PiAPIProvider.get_api_key(tier)
+                if not api_key and service == "video" and tier == 1:
+                    api_key = settings.VIDEO_GENERATION_API_KEY or ""
                 if not api_key:
                     continue
 
@@ -142,6 +145,7 @@ class PiAPIProvider:
             "model": "kling-3",
             "task_type": "txt2video",
             "input": {"prompt": prompt, "duration": duration, "aspect_ratio": "16:9"},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -159,6 +163,7 @@ class PiAPIProvider:
             "model": "luma",
             "task_type": "txt2video",
             "input": {"prompt": prompt, "aspect_ratio": "16:9"},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -172,6 +177,7 @@ class PiAPIProvider:
             "model": "hailuo",
             "task_type": "txt2video",
             "input": {"prompt": prompt},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -185,6 +191,7 @@ class PiAPIProvider:
             "model": "wan-2.1",
             "task_type": "txt2video",
             "input": {"prompt": prompt, "aspect_ratio": "16:9"},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -198,6 +205,7 @@ class PiAPIProvider:
             "model": "sora2-pro",
             "task_type": "txt2video",
             "input": {"prompt": prompt, "aspect_ratio": "16:9", "duration": "5"},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -211,6 +219,7 @@ class PiAPIProvider:
             "model": "veo-3.1",
             "task_type": "txt2video",
             "input": {"prompt": prompt, "aspect_ratio": "16:9"},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -224,6 +233,7 @@ class PiAPIProvider:
             "model": "seedance-2",
             "task_type": "txt2video",
             "input": {"prompt": prompt},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):
@@ -237,6 +247,7 @@ class PiAPIProvider:
             "model": "hunyuan-video",
             "task_type": "txt2video",
             "input": {"prompt": prompt, "aspect_ratio": "16:9"},
+            "_service": "video",
         }
         output = await PiAPIProvider._create_and_poll_task(payload, starting_tier)
         if isinstance(output, dict):

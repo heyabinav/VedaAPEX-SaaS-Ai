@@ -1,4 +1,6 @@
+import base64
 import logging
+from typing import Any
 
 from .providers.fal_provider import FalProvider
 from .providers.replicate_provider import ReplicateProvider
@@ -48,6 +50,25 @@ logger = logging.getLogger(__name__)
 
 
 class AIToolsService:
+    VISION_PROVIDER_MODELS: dict[str, str] = {
+        "gemini": "gemini-2.0-flash",
+        "google": "gemini-2.0-flash",
+        "openrouter": "google/gemini-2.0-flash-001",
+    }
+    VISION_MODEL_HINTS = (
+        "vision",
+        "gpt-4o",
+        "gpt-4.1",
+        "gemini",
+        "claude-3",
+        "claude-4",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "llava",
+        "pixtral",
+    )
+
     @staticmethod
     def _normalize_provider(provider: str | None) -> str:
         if not provider:
@@ -60,6 +81,180 @@ class AIToolsService:
         if not provider:
             return ""
         return provider.strip()
+
+    @staticmethod
+    def provider_supports_vision(provider: str | None, model: str | None = None) -> bool:
+        provider_name = AIToolsService._normalize_provider(provider)
+        model_name = (model or provider or "").strip().lower()
+        if provider_name in {"gemini", "google"}:
+            return True
+        if provider_name == "openrouter":
+            return any(hint in model_name for hint in AIToolsService.VISION_MODEL_HINTS)
+        if provider_name == "auto":
+            return bool(AIToolsService.get_vision_provider_candidates(None))
+        return any(hint in model_name for hint in AIToolsService.VISION_MODEL_HINTS)
+
+    @staticmethod
+    def get_vision_provider_candidates(preferred_provider: str | None = None) -> list[tuple[str, str]]:
+        from app.core.config import settings
+
+        candidates: list[tuple[str, str]] = []
+
+        configured_provider = AIToolsService._normalize_provider(
+            preferred_provider or settings.VISION_PROVIDER
+        )
+        configured_model = (
+            settings.VISION_MODEL
+            or AIToolsService.VISION_PROVIDER_MODELS.get(configured_provider)
+            or ""
+        )
+        if configured_provider not in {"", "auto"} and AIToolsService.provider_supports_vision(
+            configured_provider, configured_model
+        ):
+            candidates.append((configured_provider, configured_model))
+
+        for provider_name, default_model in AIToolsService.VISION_PROVIDER_MODELS.items():
+            if (provider_name, default_model) not in candidates:
+                candidates.append((provider_name, default_model))
+
+        return candidates
+
+    @staticmethod
+    def _extract_gemini_text(result: Any) -> str:
+        if isinstance(result, dict) and result.get("candidates"):
+            candidate = result["candidates"][0]
+            parts = candidate.get("content", {}).get("parts", [])
+            return "\n".join(str(part.get("text", "")) for part in parts if part.get("text")).strip()
+        return str(result or "")
+
+    @staticmethod
+    def _build_gemini_multimodal_payload(
+        *,
+        prompt: str,
+        system_prompt: str | None,
+        images: list[dict[str, Any]],
+        response_mime_type: str | None = None,
+    ) -> dict[str, Any]:
+        parts: list[dict[str, Any]] = [{"text": prompt}]
+        for image in images:
+            data = image.get("data")
+            if not isinstance(data, (bytes, bytearray)):
+                raise ValueError("Image attachment data is unavailable.")
+            parts.append(
+                {
+                    "inline_data": {
+                        "mime_type": image.get("mime_type") or "image/png",
+                        "data": base64.b64encode(bytes(data)).decode("ascii"),
+                    }
+                }
+            )
+
+        payload: dict[str, Any] = {
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.95,
+                "maxOutputTokens": 2048,
+            },
+        }
+        if response_mime_type:
+            payload["generationConfig"]["responseMimeType"] = response_mime_type
+        if system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        return payload
+
+    @staticmethod
+    def _build_openrouter_multimodal_payload(
+        *,
+        prompt: str,
+        system_prompt: str | None,
+        images: list[dict[str, Any]],
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image in images:
+            data = image.get("data")
+            if not isinstance(data, (bytes, bytearray)):
+                raise ValueError("Image attachment data is unavailable.")
+            mime_type = image.get("mime_type") or "image/png"
+            encoded = base64.b64encode(bytes(data)).decode("ascii")
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+                }
+            )
+
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
+        payload: dict[str, Any] = {"messages": messages, "max_tokens": 2048}
+        if response_format:
+            payload["response_format"] = response_format
+        return payload
+
+    @staticmethod
+    async def generate_vision_text(
+        *,
+        prompt: str,
+        system_prompt: str | None,
+        images: list[dict[str, Any]],
+        provider: str = "auto",
+        model: str | None = None,
+        tier: int = 1,
+        response_mime_type: str | None = None,
+    ) -> str:
+        if not images:
+            return await AIToolsService.generate_text(
+                prompt=prompt,
+                system_prompt=system_prompt or "",
+                tier=tier,
+                provider=provider,
+            )
+
+        provider_name = AIToolsService._normalize_provider(provider)
+        candidates = (
+            [(provider_name, model or AIToolsService.VISION_PROVIDER_MODELS.get(provider_name, ""))]
+            if provider_name != "auto"
+            else AIToolsService.get_vision_provider_candidates(None)
+        )
+        last_error: Exception | None = None
+
+        for candidate_provider, candidate_model in candidates:
+            if not AIToolsService.provider_supports_vision(candidate_provider, candidate_model):
+                last_error = ValueError("The selected model does not support image analysis.")
+                continue
+            try:
+                if candidate_provider in {"gemini", "google"}:
+                    model_name = model or candidate_model or "gemini-2.0-flash"
+                    payload = AIToolsService._build_gemini_multimodal_payload(
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        images=images,
+                        response_mime_type=response_mime_type,
+                    )
+                    return AIToolsService._extract_gemini_text(
+                        await GeminiProvider.run_model(model_name, payload, tier)
+                    )
+                if candidate_provider == "openrouter":
+                    model_name = model or candidate_model
+                    payload = AIToolsService._build_openrouter_multimodal_payload(
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        images=images,
+                        response_format={"type": "json_object"} if response_mime_type == "application/json" else None,
+                    )
+                    result = await OpenRouterProvider.run_model(model_name, payload, tier)
+                    return AIToolsService._normalize_text_generation_result(result)
+            except Exception as exc:
+                last_error = exc
+                logger.warning("Vision provider %s failed; trying fallback", candidate_provider)
+                continue
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("No vision-capable provider is configured.")
 
     @staticmethod
     async def generate_enhancement(task: str, payload: dict, tier: int = 1):
@@ -442,24 +637,63 @@ class AIToolsService:
         provider: str = "fal",
         avatar_id: str = None,
         voice_id: str = None,
+        image_url: str = None,
+        video_url: str = None,
+        duration: int = 5,
+        aspect_ratio: str = "16:9",
     ):
         provider = AIToolsService._normalize_provider_name(provider)
+        duration = duration or 5
+        aspect_ratio = aspect_ratio or "16:9"
+
+        if provider in {"auto", "video_api"}:
+            providers = [
+                "fal",
+                "kling",
+                "pixverse",
+                "luma",
+                "openrouter",
+                "replicate",
+                "genspark",
+            ]
+            last_error = None
+            for candidate in providers:
+                try:
+                    return await AIToolsService.generate_video(
+                        prompt=prompt,
+                        tier=tier,
+                        provider=candidate,
+                        avatar_id=avatar_id,
+                        voice_id=voice_id,
+                        image_url=image_url,
+                        video_url=video_url,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    continue
+            raise Exception(f"All video generation providers failed. Last error: {last_error}")
 
         if provider == "krea":
             return await KreaProvider.run_model("krea-video-gen-v1", {"prompt": prompt}, tier)
 
         elif provider.lower() == "kling":
-            # Kling AI Video Generation (Direct Provider)
-            result = await KlingProvider.generate_video(
-                {
-                    "prompt": prompt,
-                    "mode": "text2video",
-                    "duration": 5,
-                    "aspect_ratio": "16:9",
-                },
-                starting_tier=tier,
-            )
-            return result
+            payload = {
+                "prompt": prompt,
+                "mode": "image2video" if image_url else "text2video",
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+            }
+            if image_url:
+                payload["image_url"] = image_url
+
+            try:
+                return await KlingProvider.generate_video(payload, starting_tier=tier)
+            except Exception:
+                return await PiAPIProvider.generate_video_kling(
+                    prompt, tier, duration=str(duration)
+                )
 
         elif provider.lower() == "segmind":
             # Segmind AnimateDiff (Free daily text-to-video)
@@ -472,7 +706,7 @@ class AIToolsService:
         elif provider.lower() == "fal":
             # Fal Wan2.1 (Sora-level ultra-realistic video generation)
             result = await FalProvider.run_model(
-                "fal-ai/wan/wan2.1/t2v/1.3b", {"prompt": prompt}, tier
+                "fal-ai/wan/wan2.1/t2v/1.3b", {"prompt": prompt, "_service": "video"}, tier
             )
             # Returns a dictionary with the video URL
             if isinstance(result, dict) and "video" in result:
@@ -484,11 +718,20 @@ class AIToolsService:
 
         elif provider.lower() == "pixverse":
             # Pixverse Video Generation
+            payload = {
+                "model": (
+                    "pixverse/v5/image-to-video"
+                    if image_url
+                    else "pixverse/v5/text-to-video"
+                ),
+                "prompt": prompt,
+                "duration": duration,
+                "aspect_ratio": aspect_ratio,
+            }
+            if image_url:
+                payload["image_url"] = image_url
             return await PixverseProvider.run_model(
-                {
-                    "model": "pixverse/v5/image-to-video",  # Update based on pixverse actual requirements
-                    "prompt": prompt,
-                },
+                payload,
                 tier,
             )
 
@@ -533,10 +776,6 @@ class AIToolsService:
             }
             return await DIDProvider.run_model(payload, tier)
 
-        # ---- PiAPI Video Models ----
-        elif provider.lower() == "kling":
-            return await PiAPIProvider.generate_video_kling(prompt, tier)
-
         elif provider.lower() == "luma":
             return await PiAPIProvider.generate_video_luma(prompt, tier)
 
@@ -575,7 +814,9 @@ class AIToolsService:
             return await NVIDIAProvider.run_model("nvidia/cosmos-1.0", {"prompt": prompt}, tier)
 
         # Default Video Generation routes to Replicate Provider
-        return await ReplicateProvider.run_model("luma", "ray", {"prompt": prompt}, tier)
+        return await ReplicateProvider.run_model(
+            "luma", "ray", {"prompt": prompt, "_service": "video"}, tier
+        )
 
     @staticmethod
     def _normalize_text_generation_result(result):

@@ -12,6 +12,11 @@ class AttachmentMetadata:
     size: int
     extension: str
     temp_path: str
+    asset_id: int | None = None
+    proxy_url: str | None = None
+    storage_key: str | None = None
+    file_hash: str | None = None
+    persisted: bool = False
     is_image: bool = False
     is_document: bool = False
     sanitized_name: str = ""

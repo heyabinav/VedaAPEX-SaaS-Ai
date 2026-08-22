@@ -1,5 +1,6 @@
 from app.utils.time import utcnow
 
+import uuid
 from typing import TYPE_CHECKING, Any, Optional, List
 from sqlalchemy.orm import relationship
 from sqlmodel import SQLModel, Field, Relationship
@@ -31,7 +32,11 @@ class User(UserBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_password: str = Field(default="")
     role: str = Field(default="USER")  # USER or ADMIN
-    referral_code: str = Field(unique=True, index=True, default="")
+    referral_code: str = Field(
+        unique=True,
+        index=True,
+        default_factory=lambda: f"VEDA{uuid.uuid4().hex[:8].upper()}",
+    )
     referred_by: Optional[str] = None
     api_key: Optional[str] = Field(default=None, unique=True, index=True)
     webhook_url: Optional[str] = None

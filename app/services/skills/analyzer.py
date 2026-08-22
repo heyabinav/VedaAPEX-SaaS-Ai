@@ -86,17 +86,37 @@ class SkillAnalyzer:
     @staticmethod
     def extract_capabilities(content: str, repo_name: str = "") -> List[str]:
         """Extract capabilities/features from content."""
-        capabilities = []
-        
-        # Look for capabilities/features sections
-        sections = re.split(r"\n#+\s*(capabilities|features|functionality|what it does|how it works)\s*\n", content, flags=re.IGNORECASE)
-        
-        if len(sections) > 1:
-            features_text = sections[-1]
-            
-            # Extract bullet points
-            bullets = re.findall(r"[-*]\s+([^\n]+)", features_text)
-            capabilities.extend([b.strip() for b in bullets if b.strip()])
+        capabilities: List[str] = []
+
+        def add_capability(value: str) -> None:
+            cleaned = " ".join(value.split()).strip()
+            if cleaned and cleaned not in capabilities:
+                capabilities.append(cleaned)
+
+        lines = content.splitlines()
+        in_section = False
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            if re.match(r"^#+\s*(capabilities|features|functionality|what it does|how it works)\b", line, re.IGNORECASE):
+                in_section = True
+                continue
+
+            if in_section:
+                if re.match(r"^#+\s+", line):
+                    break
+                bullet = re.match(r"^[-*]\s+(.+)$", line)
+                if bullet:
+                    add_capability(bullet.group(1))
+                elif not line.startswith(">"):
+                    add_capability(line)
+
+        if not capabilities:
+            bullets = re.findall(r"^\s*[-*]\s+([^\n]+)", content, flags=re.MULTILINE)
+            for bullet in bullets:
+                add_capability(bullet)
         
         # Detect common capabilities from repo name
         repo_lower = repo_name.lower()
@@ -114,9 +134,9 @@ class SkillAnalyzer:
         if "ml" in repo_lower or "machine" in repo_lower or "ai" in repo_lower:
             capabilities.append("Machine learning and AI")
         if "web" in repo_lower or "frontend" in repo_lower:
-            capabilities.append("Web development and UI")
+            add_capability("Web development and UI")
         if "data" in repo_lower:
-            capabilities.append("Data processing and analysis")
+            add_capability("Data processing and analysis")
         
         return capabilities[:10]  # Limit to 10
     

@@ -16,7 +16,7 @@ class PixverseProvider:
             7: settings.PIXVERSE_API_KEY_TIER7,
             8: settings.PIXVERSE_API_KEY_TIER8,
         }
-        return keys.get(tier) or ""
+        return keys.get(tier) or (settings.VIDEO_GENERATION_API_KEY if tier == 1 else "") or ""
 
     @staticmethod
     async def run_model(input_data: dict, starting_tier: int) -> Any:

@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     GEMINI_API_KEY_TIER5: Optional[str] = None
     GEMINI_API_KEY_TIER6: Optional[str] = None
     DOCUMENT_COMPILER_KEY: Optional[str] = None
+    DOCUMENT_GENERATION_API_KEY: Optional[str] = None
+    TEXT_GENERATION_API_KEY: Optional[str] = None
+    PPT_GENERATION_API_KEY: Optional[str] = None
+    VIDEO_GENERATION_API_KEY: Optional[str] = None
+    VISION_PROVIDER: Optional[str] = None
+    VISION_MODEL: Optional[str] = None
+    VISION_API_KEY: Optional[str] = None
+    AI_MAX_TOOL_ITERATIONS: int = 5
 
     # Media Search API Keys
     PEXELS_API_KEY: Optional[str] = None  # For image and video search
@@ -660,37 +668,56 @@ class Settings(BaseSettings):
     def __init__(self, **values):
         env = os.environ
 
-        if "SECRET_KEY" not in values and not values.get("SECRET_KEY") and not env.get("SECRET_KEY"):
-            alias = env.get("JWT_ACCESS_SECRET") or env.get("JWT_SECRET")
-            if alias:
-                values["SECRET_KEY"] = alias
+        alias = env.get("JWT_ACCESS_SECRET") or env.get("JWT_SECRET")
+        if alias and not env.get("SECRET_KEY"):
+            values["SECRET_KEY"] = alias
 
-        if "APP_ENV" not in values and not values.get("APP_ENV") and not env.get("APP_ENV"):
-            alias = env.get("NODE_ENV")
-            if alias:
-                values["APP_ENV"] = alias
+        alias = env.get("NODE_ENV")
+        if alias and not env.get("APP_ENV"):
+            values["APP_ENV"] = alias
 
-        if "R2_BUCKET_NAME" not in values and not values.get("R2_BUCKET_NAME") and not env.get("R2_BUCKET_NAME"):
-            alias = env.get("R2_BUCKET")
-            if alias:
-                values["R2_BUCKET_NAME"] = alias
+        alias = env.get("R2_BUCKET")
+        if alias and not env.get("R2_BUCKET_NAME"):
+            values["R2_BUCKET_NAME"] = alias
 
-        if "R2_ENDPOINT_URL" not in values and not values.get("R2_ENDPOINT_URL") and not env.get("R2_ENDPOINT_URL"):
-            alias = env.get("R2_ENDPOINT")
-            if alias:
-                values["R2_ENDPOINT_URL"] = alias
+        alias = env.get("R2_ENDPOINT")
+        if alias and not env.get("R2_ENDPOINT_URL"):
+            values["R2_ENDPOINT_URL"] = alias
 
-        if "SUPABASE_KEY" not in values and not values.get("SUPABASE_KEY") and not env.get("SUPABASE_KEY"):
-            alias = env.get("SUPABASE_ANON_KEY")
-            if alias:
-                values["SUPABASE_KEY"] = alias
+        alias = env.get("SUPABASE_ANON_KEY")
+        if alias and not env.get("SUPABASE_KEY"):
+            values["SUPABASE_KEY"] = alias
 
-        if "DATABASE_URL" not in values and not values.get("DATABASE_URL") and not env.get("DATABASE_URL"):
-            alias = env.get("POSTGRES_URL") or env.get("PG_URL")
-            if alias:
-                values["DATABASE_URL"] = alias
+        alias = env.get("POSTGRES_URL") or env.get("PG_URL")
+        if alias and not env.get("DATABASE_URL"):
+            values["DATABASE_URL"] = alias
 
         super().__init__(**values)
+
+        # Apply deployment aliases after settings load so env-file defaults do
+        # not win over explicit deployment aliases.
+        if alias := (env.get("JWT_ACCESS_SECRET") or env.get("JWT_SECRET")):
+            if not env.get("SECRET_KEY"):
+                object.__setattr__(self, "SECRET_KEY", alias)
+
+        if alias := env.get("NODE_ENV"):
+            if not env.get("APP_ENV"):
+                object.__setattr__(self, "APP_ENV", alias)
+
+        if alias := env.get("R2_BUCKET"):
+            if not env.get("R2_BUCKET_NAME"):
+                object.__setattr__(self, "R2_BUCKET_NAME", alias)
+
+        if alias := env.get("R2_ENDPOINT"):
+            if not env.get("R2_ENDPOINT_URL"):
+                object.__setattr__(self, "R2_ENDPOINT_URL", alias)
+
+        if alias := env.get("SUPABASE_ANON_KEY"):
+            object.__setattr__(self, "SUPABASE_KEY", alias)
+
+        if alias := (env.get("POSTGRES_URL") or env.get("PG_URL")):
+            if not env.get("DATABASE_URL"):
+                object.__setattr__(self, "DATABASE_URL", alias)
 
     def get_runtime_port(self) -> int:
         raw_port = os.getenv("PORT") or os.getenv("APP_PORT")

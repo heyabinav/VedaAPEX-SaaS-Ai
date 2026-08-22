@@ -7,6 +7,17 @@ from .validator import sanitize_filename
 
 
 class TemporaryAttachmentStorage:
+    DOCUMENT_MIME_TYPES = {
+        "application/json",
+        "application/pdf",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/csv",
+        "text/plain",
+    }
+
     @staticmethod
     def ensure_root() -> str:
         root = Path(ATTACHMENT_CONFIG.TEMP_UPLOAD_DIR)
@@ -16,6 +27,7 @@ class TemporaryAttachmentStorage:
     @staticmethod
     def save_upload(file_bytes: bytes, original_filename: str, mime_type: str) -> AttachmentMetadata:
         safe_name = sanitize_filename(original_filename)
+        extension = Path(safe_name).suffix.lower()
         unique_id = uuid.uuid4().hex
         target = Path(ATTACHMENT_CONFIG.TEMP_UPLOAD_DIR) / f"{unique_id}_{safe_name}"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -26,12 +38,15 @@ class TemporaryAttachmentStorage:
             filename=safe_name,
             mime_type=mime_type,
             size=len(file_bytes),
-            extension=Path(safe_name).suffix.lower(),
+            extension=extension,
             temp_path=str(target),
-            is_image=mime_type.startswith("image/"),
-            is_document=mime_type in {"application/pdf", "text/plain", "text/csv"},
+            is_image=mime_type.startswith("image/") or extension in {".jpg", ".jpeg", ".png", ".webp", ".gif"},
+            is_document=mime_type in TemporaryAttachmentStorage.DOCUMENT_MIME_TYPES or extension in {".csv", ".docx", ".json", ".pdf", ".pptx", ".txt", ".xlsx"},
             sanitized_name=safe_name,
             original_name=original_filename,
+            extra={
+                "is_video": mime_type.startswith("video/") or extension in {".mp4", ".mov", ".webm", ".avi", ".mkv"},
+            },
         )
 
     @staticmethod

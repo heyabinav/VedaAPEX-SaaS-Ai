@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 
 
 class ImageGenerationRequest(BaseModel):
@@ -16,6 +16,10 @@ class VideoGenerationRequest(BaseModel):
     provider: Optional[str] = "auto"  # Free-route first, then premium fallback.
     avatar_id: Optional[str] = None
     voice_id: Optional[str] = None
+    image_url: Optional[str] = None
+    video_url: Optional[str] = None
+    duration: Optional[int] = 5
+    aspect_ratio: Optional[str] = "16:9"
 
 
 class TextGenerationRequest(BaseModel):
@@ -69,21 +73,22 @@ class ImageEnhanceRequest(BaseModel):
 class WordGenerationRequest(BaseModel):
     prompt: str
     tier: int = 1
-    provider: Optional[str] = "document_compiler"  # Can be "document_compiler", "groq", "ollama"
+    provider: Optional[str] = "auto"  # Can be "auto", "document_compiler", or any text provider.
+    attachment_urls: Optional[List[str]] = None
 
 
 class ExcelGenerationRequest(BaseModel):
     prompt: str
     tier: int = 1
-    provider: Optional[str] = "document_compiler"  # Can be "document_compiler", "groq", "ollama"
+    provider: Optional[str] = "auto"  # Can be "auto", "document_compiler", or any text provider.
+    attachment_urls: Optional[List[str]] = None
 
 
 class PPTGenerationRequest(BaseModel):
     prompt: str
     tier: int = 1
-    provider: Optional[str] = (
-        "skillboss"  # Can be "2slides", "presenton", "skillboss", "document_compiler", "groq", "ollama"
-    )
+    provider: Optional[str] = "auto"  # Can be "auto", "ppt_api", "2slides", "presenton", "skillboss", or any text provider.
+    attachment_urls: Optional[List[str]] = None
 
 
 class MusicGenerationRequest(BaseModel):
@@ -95,7 +100,8 @@ class MusicGenerationRequest(BaseModel):
 class PDFGenerationRequest(BaseModel):
     prompt: str
     tier: int = 1
-    provider: Optional[str] = "document_compiler"  # Can be "document_compiler", "groq", "ollama"
+    provider: Optional[str] = "auto"  # Can be "auto", "document_compiler", or any text provider.
+    attachment_urls: Optional[List[str]] = None
 
 
 class AnimationGenerationRequest(BaseModel):

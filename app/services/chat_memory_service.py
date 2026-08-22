@@ -21,6 +21,7 @@ from app.services.supabase_service import SupabaseService
 from app.services.redis_chat_memory import RedisChatMemory
 from app.services.search_router import SearchRouter
 from app.services.search_decision_engine import SearchDecisionEngine
+from app.services.image_agent_service import ImageAgentService
 import logging
 
 logger = logging.getLogger("services.chat_memory_service")
@@ -55,6 +56,20 @@ def _as_message_text(message: Any) -> str:
     if isinstance(message, dict):
         return str(message.get("content") or "")
     return str(message or "")
+
+
+def _attachment_metadata_summary(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item.get("id"),
+        "asset_id": item.get("asset_id"),
+        "filename": item.get("filename"),
+        "mime_type": item.get("mime_type"),
+        "size": item.get("size"),
+        "proxy_url": item.get("proxy_url"),
+        "storage_key": item.get("storage_key"),
+        "file_hash": item.get("file_hash"),
+        "persistent": bool(item.get("persistent")),
+    }
 
 
 class ChatMemoryService:
@@ -333,6 +348,7 @@ class ChatMemoryService:
         model: str = "auto",
         context_limit: int = 12,
         attachments: list[dict[str, Any]] | None = None,
+        base_url: str | None = None,
     ) -> dict[str, Any]:
         if session_id:
             chat_session = ChatMemoryService.get_session(session, user, session_id)
@@ -414,6 +430,89 @@ class ChatMemoryService:
             "Instruction: Sirf inhi diye gaye facts ka use karo. Koi bhi fact jo yahan nahi diya gaya hai, use mat banao ya guess mat karo."
         )
         system_prompt = system_prompt + "\n\n" + "\n".join(identity_lines)
+
+        if ImageAgentService.has_image_attachments(attachments):
+            image_result = await ImageAgentService.run(
+                message=message,
+                attachments=attachments or [],
+                context_messages=context_messages,
+                model=model or "auto",
+                base_url=base_url,
+            )
+            answer_text = image_result.final_answer
+
+            latest_facts = ChatMemoryService.extract_user_facts(
+                past_messages
+                + [{"role": "user", "content": message}, {"role": "assistant", "content": answer_text}]
+            )
+            await ChatMemoryService.save_memory_facts_to_supabase(user, latest_facts)
+
+            first_user_message = next((msg.content for msg in past_messages if msg.role == "user"), message)
+            if chat_session.title == "New Chat":
+                chat_session.title = ChatMemoryService._generate_session_title(first_user_message, answer_text)
+                chat_session.updated_at = utcnow()
+                session.add(chat_session)
+                session.commit()
+
+            attachment_summary = [
+                _attachment_metadata_summary(item)
+                for item in (attachments or [])
+            ]
+            user_msg = ChatMemoryService.add_message(
+                session,
+                user,
+                session_id,
+                "user",
+                message,
+                metadata={"attachments": attachment_summary},
+            )
+            assistant_metadata = {
+                "model": model,
+                "context_limit": context_limit,
+                **ImageAgentService.metadata(image_result, attachments or []),
+            }
+            assistant_msg = ChatMemoryService.add_message(
+                session,
+                user,
+                session_id,
+                "assistant",
+                answer_text,
+                metadata=assistant_metadata,
+            )
+
+            history = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit + 2)
+            try:
+                formatted_messages = [
+                    {
+                        "id": m.id,
+                        "role": m.role,
+                        "content": m.content,
+                        "created_at": m.created_at.isoformat() if hasattr(m.created_at, "isoformat") else str(m.created_at),
+                    }
+                    for m in history
+                ]
+                HFChatStorageService.sync_session(
+                    user_id=user.id,
+                    session_id=session_id,
+                    title=chat_session.title,
+                    messages=formatted_messages,
+                )
+            except Exception as exc:
+                logger.warning("Failed to sync chat session %s to HF storage: %s", session_id, exc)
+
+            return {
+                "session_id": session_id,
+                "title": chat_session.title,
+                "answer": answer_text,
+                "history": history,
+                "metadata": {
+                    "model": model,
+                    "context_limit": context_limit,
+                    "message_id": user_msg.id,
+                    "answer_id": assistant_msg.id,
+                    **assistant_metadata,
+                },
+            }
 
         # ───────────────────────────────────────────────────────────────
         # INTELLIGENT WEB SEARCH INTEGRATION
@@ -576,12 +675,7 @@ class ChatMemoryService:
                 "message_id": user_msg.id,
                 "answer_id": assistant_msg.id,
                 "attachments": [
-                    {
-                        "id": item.get("id"),
-                        "filename": item.get("filename"),
-                        "mime_type": item.get("mime_type"),
-                        "size": item.get("size"),
-                    }
+                    _attachment_metadata_summary(item)
                     for item in (attachments or [])
                 ],
             },
@@ -781,4 +875,3 @@ class ChatMemoryService:
         except Exception as e:
             logger.warning("Failed to save conversation summary: %s", e)
             return False
-

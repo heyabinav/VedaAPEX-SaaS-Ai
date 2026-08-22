@@ -1,7 +1,10 @@
 from app.utils.time import utcnow
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import ValidationError
 from typing import Any
 from sqlmodel import Session
 from datetime import datetime
@@ -34,6 +37,8 @@ from ..schemas.ai_tools import (
     Furniture3DGenerationRequest,
 )
 from ..services.ai_service import AIToolsService
+from ..services.attachments.service import AttachmentService
+from ..services.attachments.validator import AttachmentValidationError
 from ..services.asset_storage_service import asset_storage
 from ..services.auth_service import AuthService
 from ..services.generation_policy_service import GenerationPolicyService
@@ -64,6 +69,174 @@ async def get_current_user(
     return await AuthService.get_authenticated_user(request, credentials, session)
 
 
+def _parse_attachment_urls(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()] or None
+    if not isinstance(value, str):
+        return [str(value)]
+
+    stripped = value.strip()
+    if not stripped:
+        return None
+
+    try:
+        parsed = json.loads(stripped)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()] or None
+        if isinstance(parsed, str) and parsed.strip():
+            return [parsed.strip()]
+    except json.JSONDecodeError:
+        pass
+
+    return [item.strip() for item in stripped.split(",") if item.strip()] or None
+
+
+async def _parse_document_request(
+    req: Request,
+    request_model,
+    user_id: int,
+    session: Session | None = None,
+) -> tuple[Any, list[Any], list[dict[str, Any]]]:
+    content_type = req.headers.get("content-type", "").lower()
+    attachments = []
+    normalized_attachments: list[dict[str, Any]] = []
+
+    if content_type.startswith("multipart/form-data") or content_type.startswith(
+        "application/x-www-form-urlencoded"
+    ):
+        form = await req.form()
+        files = [
+            value
+            for _, value in form.multi_items()
+            if hasattr(value, "filename") and hasattr(value, "read")
+        ]
+
+        raw_urls = form.getlist("attachment_urls") or form.getlist("attachment_url")
+        attachment_urls = []
+        for item in raw_urls:
+            parsed_urls = _parse_attachment_urls(item)
+            if parsed_urls:
+                attachment_urls.extend(parsed_urls)
+
+        try:
+            tier = int(form.get("tier") or 1)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="tier must be an integer.") from exc
+
+        payload = {
+            "prompt": form.get("prompt"),
+            "provider": form.get("provider") or "auto",
+            "tier": tier,
+            "attachment_urls": attachment_urls or None,
+        }
+        try:
+            parsed_request = request_model(**payload)
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=exc.errors()) from exc
+
+        attachments, normalized_attachments = await AttachmentService.process(
+            files,
+            user_id,
+            session=session,
+        )
+        return parsed_request, attachments, normalized_attachments
+
+    try:
+        payload = await req.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Request body must be JSON or multipart/form-data.") from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+
+    try:
+        return request_model(**payload), attachments, normalized_attachments
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
+
+
+async def _run_document_generation(
+    *,
+    doc_type: str,
+    parsed_request: Any,
+    req: Request,
+    current_user: User,
+    session: Session,
+    attachments: list[dict[str, Any]],
+):
+    from app.services.document_service import DocumentService
+
+    provider = (parsed_request.provider or "auto").strip().lower()
+    external_ppt_providers = {"2slides", "twoslides", "presenton", "skillboss", "ppt_api"}
+
+    if doc_type == "ppt" and provider in external_ppt_providers and not attachments:
+        prompt = DocumentService.prepare_prompt_with_attachments(
+            parsed_request.prompt,
+            None,
+            parsed_request.attachment_urls,
+        )
+        provider_candidates = (
+            ["skillboss", "2slides", "presenton"]
+            if provider == "ppt_api"
+            else ["2slides" if provider == "twoslides" else provider]
+        )
+        last_error = None
+        for candidate in provider_candidates:
+            try:
+                if candidate == "2slides":
+                    from app.services.providers.twoslides_provider import TwoslidesProvider
+
+                    generation_func = TwoslidesProvider.generate_ppt
+                elif candidate == "presenton":
+                    from app.services.providers.presenton_provider import PresentonProvider
+
+                    generation_func = PresentonProvider.generate_ppt
+                else:
+                    from app.services.providers.skillboss_provider import SkillbossProvider
+
+                    generation_func = SkillbossProvider.generate_ppt
+
+                result = await check_and_log_generation(
+                    user=current_user,
+                    gen_type="ppt",
+                    log_prompt=parsed_request.prompt,
+                    session=session,
+                    generation_func=generation_func,
+                    prompt=prompt,
+                    starting_tier=parsed_request.tier,
+                )
+                return GenerationResponse(status="success", result=result)
+            except Exception as exc:
+                last_error = exc
+                continue
+
+        raise last_error or HTTPException(status_code=500, detail="PPT generation failed.")
+
+    generator_map = {
+        "ppt": DocumentService.generate_ppt,
+        "word": DocumentService.generate_word,
+        "excel": DocumentService.generate_excel,
+        "pdf": DocumentService.generate_pdf,
+    }
+
+    result = await check_and_log_generation(
+        user=current_user,
+        gen_type=doc_type,
+        log_prompt=parsed_request.prompt,
+        session=session,
+        generation_func=generator_map[doc_type],
+        prompt=parsed_request.prompt,
+        base_url=str(req.base_url),
+        provider=provider,
+        tier=parsed_request.tier,
+        attachments=attachments,
+        attachment_urls=parsed_request.attachment_urls,
+    )
+    return GenerationResponse(status="success", result=result)
+
+
 def _extract_output_url(result: Any) -> str | None:
     if isinstance(result, list) and result:
         first = result[0]
@@ -78,7 +251,12 @@ def _extract_output_url(result: Any) -> str | None:
     if isinstance(result, dict):
         if isinstance(result.get("video"), dict):
             return result["video"].get("url")
-        return result.get("url") or result.get("output_url")
+        return (
+            result.get("url")
+            or result.get("video_url")
+            or result.get("output_url")
+            or result.get("download_url")
+        )
 
     return None
 
@@ -96,7 +274,7 @@ def _extract_preview_url(value: Any) -> str | None:
         return stripped
 
     if isinstance(value, dict):
-        for key in ("preview_url", "url", "output_url", "proxy_url"):
+        for key in ("preview_url", "url", "video_url", "output_url", "download_url", "proxy_url"):
             candidate = value.get(key)
             if candidate:
                 return _extract_preview_url(candidate)
@@ -475,6 +653,10 @@ async def generate_video(
             provider=request.provider,
             avatar_id=request.avatar_id,
             voice_id=request.voice_id,
+            image_url=request.image_url,
+            video_url=request.video_url,
+            duration=request.duration,
+            aspect_ratio=request.aspect_ratio,
         )
         return GenerationResponse(status="success", result=result)
     except HTTPException as he:
@@ -730,224 +912,92 @@ async def enhance_image(
 
 @router.post("/generate/ppt", response_model=GenerationResponse)
 async def generate_ppt(
-    request: PPTGenerationRequest,
     req: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    provider = getattr(request, "provider", "2slides")
-
-    if provider == "2slides":
-        from app.services.providers.twoslides_provider import TwoslidesProvider
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="ppt",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=TwoslidesProvider.generate_ppt,
-                prompt=request.prompt,
-                starting_tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    elif provider == "presenton":
-        from app.services.providers.presenton_provider import PresentonProvider
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="ppt",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=PresentonProvider.generate_ppt,
-                prompt=request.prompt,
-                starting_tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    elif provider == "skillboss":
-        from app.services.providers.skillboss_provider import SkillbossProvider
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="ppt",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=SkillbossProvider.generate_ppt,
-                prompt=request.prompt,
-                starting_tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    elif provider in ["groq", "ollama"]:
-        from app.services.document_service import DocumentService
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="ppt",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_ppt,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-                provider=provider,
-                tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        from app.core.config import settings
-
-        if not settings.DOCUMENT_COMPILER_KEY:
-            raise HTTPException(
-                status_code=501,
-                detail="Document compilation feature is currently inactive. Please configure DOCUMENT_COMPILER_KEY in your .env file to activate.",
-            )
-        try:
-            from app.services.document_service import DocumentService
-
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="ppt",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_ppt,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    attachment_records: list[Any] = []
+    try:
+        parsed_request, attachment_records, attachments = await _parse_document_request(
+            req, PPTGenerationRequest, current_user.id, session=session
+        )
+        return await _run_document_generation(
+            doc_type="ppt",
+            parsed_request=parsed_request,
+            req=req,
+            current_user=current_user,
+            session=session,
+            attachments=attachments,
+        )
+    except AttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"File validation error: {exc.code} - {exc.message}") from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if attachment_records:
+            AttachmentService.cleanup(attachment_records)
 
 
 @router.post("/generate/word", response_model=GenerationResponse)
 async def generate_word(
-    request: WordGenerationRequest,
     req: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    provider = getattr(request, "provider", "document_compiler")
-
-    if provider in ["groq", "ollama"]:
-        from app.services.document_service import DocumentService
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="word",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_word,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-                provider=provider,
-                tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        from app.core.config import settings
-
-        if not settings.DOCUMENT_COMPILER_KEY:
-            raise HTTPException(
-                status_code=501,
-                detail="Document compilation feature is currently inactive. Please configure DOCUMENT_COMPILER_KEY in your .env file to activate.",
-            )
-        try:
-            from app.services.document_service import DocumentService
-
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="word",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_word,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    attachment_records: list[Any] = []
+    try:
+        parsed_request, attachment_records, attachments = await _parse_document_request(
+            req, WordGenerationRequest, current_user.id, session=session
+        )
+        return await _run_document_generation(
+            doc_type="word",
+            parsed_request=parsed_request,
+            req=req,
+            current_user=current_user,
+            session=session,
+            attachments=attachments,
+        )
+    except AttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"File validation error: {exc.code} - {exc.message}") from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if attachment_records:
+            AttachmentService.cleanup(attachment_records)
 
 
 @router.post("/generate/excel", response_model=GenerationResponse)
 async def generate_excel(
-    request: ExcelGenerationRequest,
     req: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    provider = getattr(request, "provider", "document_compiler")
-
-    if provider in ["groq", "ollama"]:
-        from app.services.document_service import DocumentService
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="excel",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_excel,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-                provider=provider,
-                tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        from app.core.config import settings
-
-        if not settings.DOCUMENT_COMPILER_KEY:
-            raise HTTPException(
-                status_code=501,
-                detail="Document compilation feature is currently inactive. Please configure DOCUMENT_COMPILER_KEY in your .env file to activate.",
-            )
-        try:
-            from app.services.document_service import DocumentService
-
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="excel",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_excel,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    attachment_records: list[Any] = []
+    try:
+        parsed_request, attachment_records, attachments = await _parse_document_request(
+            req, ExcelGenerationRequest, current_user.id, session=session
+        )
+        return await _run_document_generation(
+            doc_type="excel",
+            parsed_request=parsed_request,
+            req=req,
+            current_user=current_user,
+            session=session,
+            attachments=attachments,
+        )
+    except AttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"File validation error: {exc.code} - {exc.message}") from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if attachment_records:
+            AttachmentService.cleanup(attachment_records)
 
 
 # =============================================
@@ -983,55 +1033,29 @@ async def generate_music(
 # =============================================
 @router.post("/generate/pdf", response_model=GenerationResponse)
 async def generate_pdf(
-    request: PDFGenerationRequest,
     req: Request,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    provider = getattr(request, "provider", "document_compiler")
-
-    if provider in ["groq", "ollama"]:
-        from app.services.document_service import DocumentService
-
-        try:
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="pdf",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_pdf,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-                provider=provider,
-                tier=request.tier,
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        from app.core.config import settings
-
-        if not settings.DOCUMENT_COMPILER_KEY:
-            raise HTTPException(
-                status_code=501,
-                detail="Document compilation feature is currently inactive. Please configure DOCUMENT_COMPILER_KEY in your .env file to activate.",
-            )
-        try:
-            from app.services.document_service import DocumentService
-
-            result = await check_and_log_generation(
-                user=current_user,
-                gen_type="pdf",
-                log_prompt=request.prompt,
-                session=session,
-                generation_func=DocumentService.generate_pdf,
-                prompt=request.prompt,
-                base_url=str(req.base_url),
-            )
-            return GenerationResponse(status="success", result=result)
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    attachment_records: list[Any] = []
+    try:
+        parsed_request, attachment_records, attachments = await _parse_document_request(
+            req, PDFGenerationRequest, current_user.id, session=session
+        )
+        return await _run_document_generation(
+            doc_type="pdf",
+            parsed_request=parsed_request,
+            req=req,
+            current_user=current_user,
+            session=session,
+            attachments=attachments,
+        )
+    except AttachmentValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"File validation error: {exc.code} - {exc.message}") from exc
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if attachment_records:
+            AttachmentService.cleanup(attachment_records)

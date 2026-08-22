@@ -12,6 +12,7 @@ These tests verify that:
 import asyncio
 import json
 import pytest
+import uuid
 from datetime import datetime
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
@@ -53,11 +54,13 @@ def db_session(engine):
 @pytest.fixture
 def test_user(db_session: Session) -> User:
     """Create a test user."""
+    suffix = uuid.uuid4().hex[:8]
     user = User(
-        email="test@example.com",
+        email=f"test-{suffix}@example.com",
         full_name="Test User",
         hashed_password="hashed_test_password",
-        provider_id="test-uuid-12345",
+        provider_id=f"test-uuid-{suffix}",
+        referral_code=f"VEDA{suffix.upper()}",
     )
     db_session.add(user)
     db_session.commit()
@@ -68,11 +71,13 @@ def test_user(db_session: Session) -> User:
 @pytest.fixture
 def another_user(db_session: Session) -> User:
     """Create another test user for isolation testing."""
+    suffix = uuid.uuid4().hex[:8]
     user = User(
-        email="other@example.com",
+        email=f"other-{suffix}@example.com",
         full_name="Other User",
         hashed_password="hashed_other_password",
-        provider_id="other-uuid-67890",
+        provider_id=f"other-uuid-{suffix}",
+        referral_code=f"VEDA{suffix.upper()}",
     )
     db_session.add(user)
     db_session.commit()
@@ -83,8 +88,9 @@ def another_user(db_session: Session) -> User:
 @pytest.fixture
 def test_session(db_session: Session, test_user: User) -> ChatSession:
     """Create a test chat session."""
+    session_suffix = uuid.uuid4().hex[:8]
     chat_session = ChatSession(
-        id="test_chat_001",
+        id=f"test_chat_{session_suffix}",
         user_id=test_user.id,
         title="Test Chat",
     )

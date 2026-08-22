@@ -21,9 +21,34 @@ class APIKeyManager:
         self._add_keys_from_env(prefix="OPENROUTER", provider="openrouter", service="text")
         self._add_keys_from_env(prefix="STABILITY", provider="stability", service="image")
         self._add_keys_from_env(prefix="REPLICATE", provider="replicate", service="image")
+        self._add_keys_from_env(prefix="REPLICATE", provider="replicate", service="video")
         self._add_keys_from_env(prefix="FAL", provider="fal", service="image")
+        self._add_keys_from_env(prefix="FAL", provider="fal", service="video")
         self._add_keys_from_env(prefix="GOOGLE", provider="google", service="all")
         self._add_keys_from_env(prefix="GITHUB", provider="github", service="all")
+        self._add_env_alias("TEXT_GENERATION_API_KEY", provider="openai", service="text")
+        self._add_env_alias("DOCUMENT_GENERATION_API_KEY", provider="openai", service="text")
+        self._add_env_alias("VIDEO_GENERATION_API_KEY", provider="generic", service="video")
+        self._add_env_alias("PPT_GENERATION_API_KEY", provider="generic", service="ppt")
+        self._add_env_alias("OPENAI_API_KEY", provider="openai", service="text")
+        self._add_env_alias("GEMINI_API_KEY", provider="google", service="text")
+        self._add_env_alias("VISION_API_KEY", provider="google", service="text")
+        self._add_env_alias("FAL_API_KEY", provider="fal", service="video")
+        self._add_env_alias("REPLICATE_API_KEY", provider="replicate", service="video")
+        self._add_env_alias("OPENROUTER_API_KEY", provider="openrouter", service="video")
+
+    def _add_env_alias(self, env_name: str, provider: str, service: str) -> None:
+        key_value = os.getenv(env_name)
+        if not key_value:
+            return
+        self._keys.append(
+            APIKey(
+                key=key_value,
+                provider=provider,
+                key_type=KeyType.PERMANENT,
+                service=service,
+            )
+        )
 
     def _add_keys_from_env(self, prefix: str, provider: str, service: str) -> None:
         for key_type, suffix in ((KeyType.DAILY, "DAILY"), (KeyType.MONTHLY, "MONTHLY"), (KeyType.PERMANENT, "PERMANENT")):

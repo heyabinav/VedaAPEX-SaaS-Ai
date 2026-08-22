@@ -46,7 +46,7 @@ class OpenRouterProvider:
             9: settings.OPENROUTER_API_KEY_TIER9,
             10: settings.OPENROUTER_API_KEY_TIER10,
         }
-        return keys.get(tier) or ""
+        return keys.get(tier) or getattr(settings, "VISION_API_KEY", "") or ""
 
     @staticmethod
     async def run_model(model: str, input_data: dict, starting_tier: int) -> Any:
@@ -68,6 +68,7 @@ class OpenRouterProvider:
                 api_key
                 or OpenRouterProvider.get_api_key_by_tier(starting_tier)
                 or OpenRouterProvider.get_api_key_by_tier(1)
+                or settings.VIDEO_GENERATION_API_KEY
             )
             if not key:
                 raise Exception(f"No API key found for OpenRouter video model: {model}")

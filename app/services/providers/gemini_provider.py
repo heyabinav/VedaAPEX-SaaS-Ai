@@ -8,14 +8,14 @@ class GeminiProvider:
     def get_api_key(tier: int = 1) -> str:
         """Get the Gemini API key from settings for a specific tier or fallback to default key"""
         keys = {
-            1: getattr(settings, "GEMINI_API_KEY_TIER1", None) or getattr(settings, "GEMINI_API_KEY", None),
+            1: getattr(settings, "GEMINI_API_KEY_TIER1", None) or getattr(settings, "GEMINI_API_KEY", None) or getattr(settings, "VISION_API_KEY", None),
             2: getattr(settings, "GEMINI_API_KEY_TIER2", None),
             3: getattr(settings, "GEMINI_API_KEY_TIER3", None),
             4: getattr(settings, "GEMINI_API_KEY_TIER4", None),
             5: getattr(settings, "GEMINI_API_KEY_TIER5", None),
             6: getattr(settings, "GEMINI_API_KEY_TIER6", None),
         }
-        return keys.get(tier) or getattr(settings, "GEMINI_API_KEY", "") or ""
+        return keys.get(tier) or getattr(settings, "GEMINI_API_KEY", None) or getattr(settings, "VISION_API_KEY", "") or ""
 
     @staticmethod
     async def run_model(model: str, input_data: dict, starting_tier: int = 1) -> Any:

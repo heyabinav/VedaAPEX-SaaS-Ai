@@ -19,7 +19,7 @@ class GensparkProvider:
             7: settings.GENSPARK_API_KEY_TIER7,
             8: settings.GENSPARK_API_KEY_TIER8,
         }
-        return keys.get(tier) or ""
+        return keys.get(tier) or (settings.VIDEO_GENERATION_API_KEY if tier == 1 else "") or ""
 
     @staticmethod
     def _build_headers(api_key: str) -> dict[str, str]:
