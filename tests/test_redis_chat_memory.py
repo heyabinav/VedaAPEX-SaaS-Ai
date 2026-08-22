@@ -490,6 +490,80 @@ class TestCrossSessionMemory:
         assert "Nice to meet you, Rahul." in captured["prompt"]
         assert "previous chat session" in captured["system_prompt"]
 
+    @pytest.mark.asyncio
+    async def test_new_chat_uses_supabase_memory_snapshot_before_answer(
+        self,
+        db_session: Session,
+        test_user: User,
+        monkeypatch,
+    ):
+        memory_snapshot = {
+            "version": 2,
+            "score_facts": {"10th": 90},
+            "recent_context": [
+                {"role": "user", "content": "My name is Rahul."},
+                {"role": "assistant", "content": "Nice to meet you, Rahul."},
+            ],
+            "session_summaries": [
+                {
+                    "session_id": "chat_prev",
+                    "title": "First Chat",
+                    "summary": "User introduced himself as Rahul and asked to remember the name.",
+                    "updated_at": "2026-08-22T00:00:00Z",
+                }
+            ],
+        }
+
+        captured: dict[str, object] = {}
+
+        async def fake_generate_text(*, prompt, system_prompt, tier, provider="replicate"):
+            captured["prompt"] = prompt
+            captured["system_prompt"] = system_prompt
+            return "Your name is Rahul."
+
+        async def fake_load_memory(*args, **kwargs):
+            return memory_snapshot
+
+        async def fake_save_memory(user, facts, session_id=None, session_title=None, messages=None, existing_memory=None):
+            captured["saved_facts"] = facts
+            captured["saved_session_id"] = session_id
+            captured["saved_session_title"] = session_title
+            captured["saved_messages"] = list(messages or [])
+            captured["saved_existing_memory"] = existing_memory
+
+        async def noop_true_async(*args, **kwargs):
+            return True
+
+        monkeypatch.setattr("app.services.chat_memory_service.AIToolsService.generate_text", fake_generate_text)
+        monkeypatch.setattr("app.services.chat_memory_service.ChatMemoryService.load_memory_facts_from_supabase", fake_load_memory)
+        monkeypatch.setattr("app.services.chat_memory_service.ChatMemoryService.save_memory_facts_to_supabase", fake_save_memory)
+        monkeypatch.setattr("app.services.chat_memory_service.SupabaseService.get_user_profile_facts", fake_load_memory)
+        monkeypatch.setattr("app.services.chat_memory_service.HFChatStorageService.sync_session", lambda *args, **kwargs: None)
+        monkeypatch.setattr("app.services.chat_memory_service.RedisChatMemory.save_message", noop_true_async)
+        monkeypatch.setattr("app.services.chat_memory_service.RedisChatMemory.restore_from_database", noop_true_async)
+        monkeypatch.setattr("app.services.chat_memory_service.SearchDecisionEngine.should_search", lambda message: False)
+        monkeypatch.setattr("app.services.chat_memory_service.SearchDecisionEngine.get_search_reason", lambda message: "not needed")
+        monkeypatch.setattr("app.services.chat_memory_service.SearchDecisionEngine.classify_request", lambda message: "general")
+
+        result = await ChatMemoryService.ask(
+            session=db_session,
+            user=test_user,
+            session_id=None,
+            message="What is my name?",
+            model="auto",
+            context_limit=12,
+        )
+
+        assert result["answer"] == "Your name is Rahul."
+        assert "My name is Rahul." in captured["prompt"]
+        assert "Nice to meet you, Rahul." in captured["prompt"]
+        assert "Supabase memory" in captured["system_prompt"]
+        assert captured["saved_session_id"]
+        assert captured["saved_session_title"]
+        assert any(getattr(msg, "content", "") == "What is my name?" for msg in captured["saved_messages"])
+        assert any(getattr(msg, "role", "") == "assistant" and getattr(msg, "content", "") == "Your name is Rahul." for msg in captured["saved_messages"])
+        assert isinstance(captured["saved_existing_memory"], dict)
+
 
 class TestIdempotency:
     """Test message deduplication for idempotent requests."""

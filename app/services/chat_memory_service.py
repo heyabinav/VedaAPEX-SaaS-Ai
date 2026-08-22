@@ -138,6 +138,199 @@ class ChatMemoryService:
         return []
 
     @staticmethod
+    def _serialize_context_messages(messages: list[Any], limit: int = 24) -> list[dict[str, str]]:
+        """Normalize messages for storage or prompt injection."""
+        serialized: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        limit = max(1, min(limit, 50))
+
+        for message in list(messages or [])[-limit:]:
+            if isinstance(message, ChatMessage):
+                role = message.role
+                content = message.content
+            elif isinstance(message, dict):
+                role = message.get("role")
+                content = message.get("content")
+            else:
+                continue
+
+            role_text = str(role or "").strip().lower()
+            content_text = " ".join(str(content or "").split()).strip()
+            if role_text not in {"user", "assistant", "system"} or not content_text:
+                continue
+
+            item = {"role": role_text, "content": content_text[:1200]}
+            key = (item["role"], item["content"][:240])
+            if key in seen:
+                continue
+            seen.add(key)
+            serialized.append(item)
+
+        return serialized
+
+    @staticmethod
+    def _build_session_summary(messages: list[dict[str, str]], title: str | None = None) -> str:
+        """Build a compact readable summary from recent chat messages."""
+        if not messages:
+            return ""
+
+        pieces: list[str] = []
+        for item in messages[-8:]:
+            role = item.get("role", "user")
+            content = " ".join(str(item.get("content") or "").split()).strip()
+            if not content:
+                continue
+            pieces.append(f"{role}: {content[:180]}")
+
+        summary = " | ".join(pieces).strip()
+        if title:
+            prefix = f"{title}: "
+            summary = prefix + summary if summary else prefix.rstrip()
+        return summary[:2000]
+
+    @staticmethod
+    def _normalize_memory_payload(payload: Any) -> dict[str, Any]:
+        """Coerce Supabase memory payload into a stable schema."""
+        normalized: dict[str, Any] = {
+            "version": 2,
+            "score_facts": {},
+            "recent_context": [],
+            "session_summaries": [],
+        }
+
+        if not isinstance(payload, dict):
+            return normalized
+
+        raw_score_facts = payload.get("score_facts")
+        if isinstance(raw_score_facts, dict):
+            for key, value in raw_score_facts.items():
+                try:
+                    normalized["score_facts"][str(key)] = int(value)
+                except (TypeError, ValueError):
+                    continue
+
+        raw_recent_context = payload.get("recent_context")
+        if isinstance(raw_recent_context, list):
+            normalized["recent_context"] = ChatMemoryService._serialize_context_messages(raw_recent_context, limit=24)
+
+        raw_session_summaries = payload.get("session_summaries")
+        if isinstance(raw_session_summaries, list):
+            summaries: list[dict[str, str]] = []
+            for item in raw_session_summaries:
+                if not isinstance(item, dict):
+                    continue
+                summary_text = " ".join(str(item.get("summary") or "").split()).strip()
+                if not summary_text:
+                    continue
+                summaries.append(
+                    {
+                        "session_id": str(item.get("session_id") or "").strip(),
+                        "title": str(item.get("title") or "Chat").strip()[:80] or "Chat",
+                        "summary": summary_text[:2000],
+                        "updated_at": str(item.get("updated_at") or "").strip(),
+                    }
+                )
+            normalized["session_summaries"] = summaries[:6]
+
+        version = payload.get("version")
+        if isinstance(version, int) and version > normalized["version"]:
+            normalized["version"] = version
+
+        for key in ("last_session_id", "last_session_title", "updated_at"):
+            value = payload.get(key)
+            if value is not None:
+                normalized[key] = value
+
+        return normalized
+
+    @staticmethod
+    def _merge_memory_payload(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+        """Merge two memory payloads while preserving older snapshots."""
+        merged = dict(base or {})
+        merged["version"] = max(int(merged.get("version") or 2), int(update.get("version") or 2))
+
+        score_facts: dict[str, Any] = {}
+        if isinstance(base.get("score_facts"), dict):
+            score_facts.update(base["score_facts"])
+        if isinstance(update.get("score_facts"), dict):
+            score_facts.update(update["score_facts"])
+        merged["score_facts"] = score_facts
+
+        recent_context = update.get("recent_context")
+        if isinstance(recent_context, list) and recent_context:
+            merged["recent_context"] = recent_context[:24]
+        elif "recent_context" not in merged:
+            merged["recent_context"] = []
+
+        summaries: list[dict[str, Any]] = []
+        for source in (update.get("session_summaries"), base.get("session_summaries")):
+            if not isinstance(source, list):
+                continue
+            for item in source:
+                if isinstance(item, dict):
+                    summaries.append(item)
+
+        deduped_summaries: list[dict[str, Any]] = []
+        seen_session_ids: set[str] = set()
+        for item in summaries:
+            session_id = str(item.get("session_id") or "").strip()
+            if session_id and session_id in seen_session_ids:
+                continue
+            if session_id:
+                seen_session_ids.add(session_id)
+            deduped_summaries.append(item)
+        merged["session_summaries"] = deduped_summaries[:6]
+
+        for key in ("last_session_id", "last_session_title", "updated_at"):
+            if update.get(key) is not None:
+                merged[key] = update[key]
+            elif base.get(key) is not None and key not in merged:
+                merged[key] = base[key]
+
+        return merged
+
+    @staticmethod
+    def _build_memory_prompt(memory: dict[str, Any], limit: int = 12) -> str:
+        """Render Supabase memory into a compact system prompt section."""
+        normalized = ChatMemoryService._normalize_memory_payload(memory)
+        sections: list[str] = []
+
+        score_facts = normalized.get("score_facts") or {}
+        if score_facts:
+            fact_lines = [
+                f"- {grade}: {percent}%"
+                for grade, percent in sorted(score_facts.items(), key=lambda item: str(item[0]))
+            ]
+            sections.append("Supabase memory facts:\n" + "\n".join(fact_lines))
+
+        session_summaries = normalized.get("session_summaries") or []
+        if session_summaries:
+            summary_lines = []
+            for item in session_summaries[:3]:
+                title = item.get("title") or "Chat"
+                summary = item.get("summary") or ""
+                summary_lines.append(f"- {title}: {summary[:300]}")
+            sections.append("Supabase chat snapshots:\n" + "\n".join(summary_lines))
+
+        recent_context = normalized.get("recent_context") or []
+        if recent_context:
+            recent_lines = []
+            for item in recent_context[-limit:]:
+                role = item.get("role", "user")
+                content = item.get("content", "")
+                recent_lines.append(f"{role}: {content[:300]}")
+            sections.append("Recent Supabase chat context:\n" + "\n".join(recent_lines))
+
+        return "\n\n".join(section for section in sections if section).strip()
+
+    @staticmethod
+    def _build_memory_context_messages(memory: dict[str, Any], limit: int = 12) -> list[dict[str, str]]:
+        """Convert persisted Supabase memory into prompt messages."""
+        normalized = ChatMemoryService._normalize_memory_payload(memory)
+        messages = list(normalized.get("recent_context") or [])
+        return messages[-max(1, min(limit, 24)):]
+
+    @staticmethod
     def extract_user_facts(messages: list[Any]) -> dict[str, Any]:
         """Extract reusable user facts from earlier chat history, especially school-score facts."""
         score_facts: dict[str, int] = {}
@@ -203,19 +396,56 @@ class ChatMemoryService:
         return {"score_facts": score_facts}
 
     @staticmethod
-    async def save_memory_facts_to_supabase(user: User, facts: dict[str, Any]) -> None:
-        """Persist remembered facts in Supabase JSON for later session reuse."""
+    async def save_memory_facts_to_supabase(
+        user: User,
+        facts: dict[str, Any],
+        session_id: str | None = None,
+        session_title: str | None = None,
+        messages: list[Any] | None = None,
+        existing_memory: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist remembered facts and compact chat memory in Supabase JSON."""
         try:
             from app.services.supabase_service import SupabaseService
 
             if not SupabaseService.is_configured():
                 return
 
-            await SupabaseService.save_user_details(
-                str(user.id),
-                "chat_memory_json",
-                facts,
-            )
+            base_memory = ChatMemoryService._normalize_memory_payload(existing_memory or {})
+            if not base_memory.get("score_facts") and not base_memory.get("recent_context") and not base_memory.get("session_summaries"):
+                loaded = await ChatMemoryService.load_memory_facts_from_supabase(user)
+                base_memory = ChatMemoryService._normalize_memory_payload(loaded)
+
+            update: dict[str, Any] = {
+                "version": 2,
+                "score_facts": {},
+            }
+            if isinstance(facts, dict) and isinstance(facts.get("score_facts"), dict):
+                update["score_facts"] = {
+                    str(key): int(value)
+                    for key, value in facts["score_facts"].items()
+                    if str(key).strip()
+                    and isinstance(value, (int, float, str))
+                    and str(value).strip().lstrip("-").isdigit()
+                }
+
+            serialized_messages = ChatMemoryService._serialize_context_messages(messages or [], limit=24)
+            if serialized_messages:
+                update["recent_context"] = serialized_messages
+                summary_item = {
+                    "session_id": str(session_id or "").strip(),
+                    "title": (session_title or "Chat").strip()[:80] or "Chat",
+                    "summary": ChatMemoryService._build_session_summary(serialized_messages, title=session_title),
+                    "updated_at": utcnow().isoformat(),
+                }
+                update["session_summaries"] = [summary_item]
+                update["last_session_id"] = summary_item["session_id"]
+                update["last_session_title"] = summary_item["title"]
+
+            merged = ChatMemoryService._merge_memory_payload(base_memory, update)
+            merged["updated_at"] = utcnow().isoformat()
+
+            await SupabaseService.save_user_details(str(user.id), "chat_memory_json", merged)
         except Exception as exc:
             logger.warning("Failed to persist chat memory JSON for user_id=%s: %s", getattr(user, "id", None), exc)
 
@@ -231,11 +461,11 @@ class ChatMemoryService:
             payload = saved.get("chat_memory_json") if isinstance(saved, dict) else None
             if isinstance(payload, str):
                 try:
-                    return json.loads(payload)
+                    payload = json.loads(payload)
                 except json.JSONDecodeError:
                     return {}
             if isinstance(payload, dict):
-                return payload
+                return ChatMemoryService._normalize_memory_payload(payload)
             return {}
         except Exception as exc:
             logger.warning("Failed to load chat memory JSON for user_id=%s: %s", getattr(user, "id", None), exc)
@@ -440,18 +670,31 @@ class ChatMemoryService:
         context_messages = _build_context_messages(past_messages)
         extracted_facts = ChatMemoryService.extract_user_facts(past_messages)
 
+        memory_snapshot = await ChatMemoryService.load_memory_facts_from_supabase(user)
+        memory_context_messages = ChatMemoryService._build_memory_context_messages(
+            memory_snapshot,
+            limit=max(context_limit, 12),
+        )
+        memory_prompt = ChatMemoryService._build_memory_prompt(
+            memory_snapshot,
+            limit=max(context_limit, 12),
+        )
+
         prior_session_messages: list[ChatMessage] = []
         if not context_messages:
-            prior_session_messages = ChatMemoryService._load_recent_cross_session_messages(
-                session,
-                user,
-                session_id,
-                limit=max(context_limit, 20),
-            )
-            context_messages = _build_context_messages(prior_session_messages)
+            if memory_context_messages:
+                context_messages = memory_context_messages
+            else:
+                prior_session_messages = ChatMemoryService._load_recent_cross_session_messages(
+                    session,
+                    user,
+                    session_id,
+                    limit=max(context_limit, 20),
+                )
+                context_messages = _build_context_messages(prior_session_messages)
 
         prior_session_facts = ChatMemoryService.extract_user_facts(prior_session_messages)
-        saved_memory = await ChatMemoryService.load_memory_facts_from_supabase(user)
+        saved_memory = memory_snapshot
 
         score_facts: dict[str, int] = {}
         if saved_memory:
@@ -467,7 +710,10 @@ class ChatMemoryService:
             "Stay direct, factual, and consistent with earlier turns."
         )
 
-        if prior_session_messages and not past_messages:
+        if memory_prompt:
+            system_prompt += "\n\nPersistent Supabase memory:\n" + memory_prompt
+
+        if prior_session_messages and not past_messages and not memory_context_messages:
             system_prompt += (
                 "\n\nA relevant transcript from the user's previous chat session has been attached below. "
                 "Use it only when it helps answer the current request."
@@ -479,8 +725,6 @@ class ChatMemoryService:
                 for grade, percent in sorted(merged_facts["score_facts"].items(), key=lambda item: str(item[0]))
             ]
             system_prompt += "\n\nRemembered user score facts from earlier chat:\n" + "\n".join(fact_lines)
-
-        await ChatMemoryService.save_memory_facts_to_supabase(user, merged_facts)
 
         llm_messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         llm_messages.extend(context_messages)
@@ -546,7 +790,6 @@ class ChatMemoryService:
                 past_messages
                 + [{"role": "user", "content": message}, {"role": "assistant", "content": answer_text}]
             )
-            await ChatMemoryService.save_memory_facts_to_supabase(user, latest_facts)
 
             first_user_message = next((msg.content for msg in past_messages if msg.role == "user"), message)
             if chat_session.title == "New Chat":
@@ -582,6 +825,14 @@ class ChatMemoryService:
             )
 
             history = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit + 2)
+            await ChatMemoryService.save_memory_facts_to_supabase(
+                user,
+                latest_facts,
+                session_id=session_id,
+                session_title=chat_session.title,
+                messages=history,
+                existing_memory=memory_snapshot,
+            )
             try:
                 formatted_messages = [
                     {
@@ -720,7 +971,6 @@ class ChatMemoryService:
 
         # Keep the latest extracted score facts in sync for future questions.
         latest_facts = ChatMemoryService.extract_user_facts(past_messages + [{"role": "user", "content": message}, {"role": "assistant", "content": answer_text}])
-        await ChatMemoryService.save_memory_facts_to_supabase(user, latest_facts)
 
         first_user_message = next((msg.content for msg in past_messages if msg.role == "user"), message)
         if chat_session.title == "New Chat":
@@ -744,6 +994,14 @@ class ChatMemoryService:
         )
 
         history = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit + 2)
+        await ChatMemoryService.save_memory_facts_to_supabase(
+            user,
+            latest_facts,
+            session_id=session_id,
+            session_title=chat_session.title,
+            messages=history,
+            existing_memory=memory_snapshot,
+        )
         
         # Synchronize to Hugging Face Dataset Storage
         try:
