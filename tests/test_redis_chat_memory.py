@@ -425,6 +425,72 @@ class TestDatabaseFallback:
 
 
 # ─── TEST SUITE 7: Idempotency / Deduplication ────────────────────────────────
+class TestCrossSessionMemory:
+    """Test that a fresh chat session can still recall the user's previous chat."""
+
+    @pytest.mark.asyncio
+    async def test_new_chat_uses_recent_previous_session_context(
+        self,
+        db_session: Session,
+        test_user: User,
+        monkeypatch,
+    ):
+        first_session = ChatMemoryService.create_session(db_session, test_user, title="First Chat")
+        ChatMemoryService.add_message(
+            session=db_session,
+            user=test_user,
+            session_id=first_session.id,
+            role="user",
+            content="My name is Rahul.",
+        )
+        ChatMemoryService.add_message(
+            session=db_session,
+            user=test_user,
+            session_id=first_session.id,
+            role="assistant",
+            content="Nice to meet you, Rahul.",
+        )
+
+        captured: dict[str, str] = {}
+
+        async def fake_generate_text(*, prompt, system_prompt, tier, provider="replicate"):
+            captured["prompt"] = prompt
+            captured["system_prompt"] = system_prompt
+            captured["provider"] = provider
+            return "Your name is Rahul."
+
+        async def noop_dict_async(*args, **kwargs):
+            return {}
+
+        async def noop_true_async(*args, **kwargs):
+            return True
+
+        monkeypatch.setattr("app.services.chat_memory_service.AIToolsService.generate_text", fake_generate_text)
+        monkeypatch.setattr("app.services.chat_memory_service.SupabaseService.get_user_profile_facts", noop_dict_async)
+        monkeypatch.setattr("app.services.chat_memory_service.ChatMemoryService.load_memory_facts_from_supabase", noop_dict_async)
+        monkeypatch.setattr("app.services.chat_memory_service.ChatMemoryService.save_memory_facts_to_supabase", noop_true_async)
+        monkeypatch.setattr("app.services.chat_memory_service.HFChatStorageService.sync_session", lambda *args, **kwargs: None)
+        monkeypatch.setattr("app.services.chat_memory_service.RedisChatMemory.save_message", noop_true_async)
+        monkeypatch.setattr("app.services.chat_memory_service.RedisChatMemory.restore_from_database", noop_true_async)
+        monkeypatch.setattr("app.services.chat_memory_service.SearchDecisionEngine.should_search", lambda message: False)
+        monkeypatch.setattr("app.services.chat_memory_service.SearchDecisionEngine.get_search_reason", lambda message: "not needed")
+        monkeypatch.setattr("app.services.chat_memory_service.SearchDecisionEngine.classify_request", lambda message: "general")
+
+        result = await ChatMemoryService.ask(
+            session=db_session,
+            user=test_user,
+            session_id=None,
+            message="What is my name?",
+            model="auto",
+            context_limit=12,
+        )
+
+        assert result["answer"] == "Your name is Rahul."
+        assert "My name is Rahul." in captured["prompt"]
+        assert "Nice to meet you, Rahul." in captured["prompt"]
+        assert "previous chat session" in captured["system_prompt"]
+
+
 class TestIdempotency:
     """Test message deduplication for idempotent requests."""
 

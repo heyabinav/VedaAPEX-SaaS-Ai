@@ -74,6 +74,70 @@ def _attachment_metadata_summary(item: dict[str, Any]) -> dict[str, Any]:
 
 class ChatMemoryService:
     @staticmethod
+    def _sample_session_messages(messages: list[ChatMessage], limit: int) -> list[ChatMessage]:
+        """Keep the start and end of a long chat so memory is still useful."""
+        limit = max(1, min(limit, 50))
+        if len(messages) <= limit:
+            return list(messages)
+
+        head_count = min(4, limit)
+        tail_count = max(1, limit - head_count)
+        sampled = list(messages[:head_count]) + list(messages[-tail_count:])
+
+        deduped: list[ChatMessage] = []
+        seen_ids: set[str] = set()
+        for message in sampled:
+            message_id = getattr(message, "id", None)
+            if message_id and message_id in seen_ids:
+                continue
+            if message_id:
+                seen_ids.add(message_id)
+            deduped.append(message)
+        return deduped
+
+    @staticmethod
+    def _load_recent_cross_session_messages(
+        session: Session,
+        user: User,
+        exclude_session_id: str | None,
+        limit: int,
+    ) -> list[ChatMessage]:
+        """
+        Load the most recent prior chat messages for the user.
+
+        This gives a new chat session enough background to continue a previous
+        conversation when the user starts a fresh session.
+        """
+        query = select(ChatSession).where(ChatSession.user_id == user.id)
+        if exclude_session_id:
+            query = query.where(ChatSession.id != exclude_session_id)
+
+        prior_sessions = session.exec(
+            query.order_by(ChatSession.updated_at.desc(), ChatSession.created_at.desc()).limit(3)
+        ).all()
+        if not prior_sessions:
+            return []
+
+        memory_limit = max(1, limit)
+        for prior_session in prior_sessions:
+            prior_messages = session.exec(
+                select(ChatMessage)
+                .where(
+                    ChatMessage.session_id == prior_session.id,
+                    ChatMessage.user_id == user.id,
+                )
+                .order_by(ChatMessage.created_at.asc())
+            ).all()
+            if not prior_messages:
+                continue
+
+            sampled = ChatMemoryService._sample_session_messages(list(prior_messages), memory_limit)
+            if sampled:
+                return sampled
+
+        return []
+
+    @staticmethod
     def extract_user_facts(messages: list[Any]) -> dict[str, Any]:
         """Extract reusable user facts from earlier chat history, especially school-score facts."""
         score_facts: dict[str, int] = {}
@@ -247,15 +311,23 @@ class ChatMemoryService:
         # Try to restore to Redis cache for next retrieval
         # (This is async but we don't wait for it)
         try:
-            asyncio.create_task(
-                RedisChatMemory.restore_from_database(
-                    user_id=user.id,
-                    conversation_id=session_id,
-                    db_messages=result,
-                )
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            coro = RedisChatMemory.restore_from_database(
+                user_id=user.id,
+                conversation_id=session_id,
+                db_messages=result,
             )
-        except Exception as e:
-            logger.warning("Failed to queue Redis restoration: %s", e)
+            try:
+                loop.create_task(coro)
+            except Exception as e:
+                coro.close()
+                logger.warning("Failed to queue Redis restoration: %s", e)
+        else:
+            logger.debug("No running event loop; skipping Redis restoration")
         
         return result
 
@@ -324,18 +396,26 @@ class ChatMemoryService:
         # Also save to Redis cache for faster retrieval
         # This runs asynchronously and doesn't block the response
         try:
-            asyncio.create_task(
-                RedisChatMemory.save_message(
-                    user_id=user.id,
-                    conversation_id=session_id,
-                    role=role,
-                    content=content,
-                    message_id=msg.id,
-                    request_id=request_id,
-                )
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            coro = RedisChatMemory.save_message(
+                user_id=user.id,
+                conversation_id=session_id,
+                role=role,
+                content=content,
+                message_id=msg.id,
+                request_id=request_id,
             )
-        except Exception as e:
-            logger.warning("Failed to queue Redis message save: %s", e)
+            try:
+                loop.create_task(coro)
+            except Exception as e:
+                coro.close()
+                logger.warning("Failed to queue Redis message save: %s", e)
+        else:
+            logger.debug("No running event loop; skipping Redis message save")
         
         return msg
 
@@ -359,11 +439,26 @@ class ChatMemoryService:
         past_messages = ChatMemoryService.list_messages(session, user, session_id, limit=context_limit)
         context_messages = _build_context_messages(past_messages)
         extracted_facts = ChatMemoryService.extract_user_facts(past_messages)
+
+        prior_session_messages: list[ChatMessage] = []
+        if not context_messages:
+            prior_session_messages = ChatMemoryService._load_recent_cross_session_messages(
+                session,
+                user,
+                session_id,
+                limit=max(context_limit, 20),
+            )
+            context_messages = _build_context_messages(prior_session_messages)
+
+        prior_session_facts = ChatMemoryService.extract_user_facts(prior_session_messages)
         saved_memory = await ChatMemoryService.load_memory_facts_from_supabase(user)
-        merged_facts = extracted_facts
+
+        score_facts: dict[str, int] = {}
         if saved_memory:
-            score_facts = {**saved_memory.get("score_facts", {}), **extracted_facts.get("score_facts", {})}
-            merged_facts = {"score_facts": score_facts}
+            score_facts.update(saved_memory.get("score_facts", {}))
+        score_facts.update(prior_session_facts.get("score_facts", {}))
+        score_facts.update(extracted_facts.get("score_facts", {}))
+        merged_facts = {"score_facts": score_facts}
 
         system_prompt = (
             "You are a context-aware assistant. Use the previous chat history to answer the user's current message. "
@@ -371,6 +466,12 @@ class ChatMemoryService:
             "If the context is insufficient, ask a concise clarifying question. "
             "Stay direct, factual, and consistent with earlier turns."
         )
+
+        if prior_session_messages and not past_messages:
+            system_prompt += (
+                "\n\nA relevant transcript from the user's previous chat session has been attached below. "
+                "Use it only when it helps answer the current request."
+            )
 
         if merged_facts.get("score_facts"):
             fact_lines = [
